@@ -392,5 +392,5 @@ if os.path.isfile(_SPA_INDEX):
 
 if __name__ == '__main__':
     import uvicorn
-    port = int(os.getenv('PORT', '5001'))
+    port = int(os.getenv('PORT', '5099'))
     uvicorn.run("app:app", host="127.0.0.1", port=port, reload=False)
