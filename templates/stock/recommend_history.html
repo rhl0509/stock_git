@@ -1,0 +1,584 @@
+{% extends "stock/stock_layout.html" %}
+{% block title %}AI 추천 기록 분석 - 가계부 Pro{% endblock %}
+{% block page_name %}AI 일일 추천 통계{% endblock %}
+
+{% block content %}
+<style>
+    /* ── 탭 메뉴 ── */
+    .nav-tabs-custom {
+        display: flex; gap: 12px; margin-bottom: 24px; border-bottom: 2px solid #e5e7eb; padding-bottom: 8px;
+    }
+    .nav-tab-btn {
+        background: transparent; border: none; font-size: 0.95rem; font-weight: 600; color: #6b7280;
+        padding: 8px 16px; cursor: pointer; transition: all 0.2s; border-radius: 8px;
+    }
+    .nav-tab-btn:hover { background: #f3f4f6; color: #111827; }
+    .nav-tab-btn.active { background: #111827; color: #fff; }
+
+    /* ── 요약 카드 ── */
+    .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+    @media(max-width: 768px){ .stat-grid{ grid-template-columns: repeat(2, 1fr); } }
+    .stat-card {
+        background: #fff; border: 1px solid rgba(0,0,0,0.06); border-radius: 14px;
+        padding: 16px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.05);
+    }
+    .stat-label { font-size: 0.7rem; font-weight: 600; color: #9ca3af; letter-spacing: 0.8px; text-transform: uppercase; margin-bottom: 6px; }
+    .stat-value { font-family: 'Outfit', sans-serif; font-size: 1.5rem; font-weight: 700; color: #111827; line-height: 1; }
+    .stat-value.highlight { color: #8b5cf6; }
+    
+    /* ── 컨트롤 패널 ── */
+    .control-panel {
+        background: #fff; border: 1px solid rgba(0,0,0,0.06); border-radius: 16px;
+        padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
+        display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    }
+    .control-label { font-size: 0.85rem; font-weight: 600; color: #374151; }
+    .custom-select {
+        padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 8px;
+        font-size: 0.9rem; color: #111827; outline: none; background: #f9fafb; cursor: pointer;
+    }
+    .custom-select:focus { border-color: #374151; }
+
+    /* ── 테이블 카드 ── */
+    .table-card {
+        background: #fff; border: 1px solid rgba(0,0,0,0.06); border-radius: 16px;
+        overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
+        margin-bottom: 24px;
+    }
+    .table-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 16px 20px; border-bottom: 1px solid #f3f4f6;
+    }
+    .table-title { font-weight: 700; font-size: 0.95rem; color: #111827; display: flex; align-items: center; gap: 8px; }
+    
+    /* ── 테이블 공통 ── */
+    table { width: 100%; border-collapse: collapse; }
+    thead { background: #f9fafb; border-bottom: 1px solid #f3f4f6; }
+    th { padding: 12px 16px; text-align: right; color: #6b7280; font-weight: 600; font-size: 0.72rem; letter-spacing: .5px; }
+    th:first-child, td:first-child { text-align: left; }
+    td { padding: 12px 16px; text-align: right; border-bottom: 1px solid #f9fafb; font-size: 0.88rem; vertical-align: middle; }
+    tr:hover { background: #fafafa; }
+    tr:last-child td { border-bottom: none; }
+    
+    .stock-symbol { font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 0.95rem; color: #111827; }
+    .stock-name { font-size: 0.75rem; color: #9ca3af; margin-top: 2px; }
+    .price { font-family: 'Outfit', sans-serif; font-weight: 600; color: #111827; }
+    .target-price { color: #10b981; font-weight: 600; }
+    .stop-price { color: #ef4444; font-weight: 600; }
+    .conf-badge {
+        display: inline-flex; align-items: center; justify-content: center;
+        padding: 3px 8px; border-radius: 6px; font-size: 0.72rem; font-weight: 700;
+    }
+    .conf-high { background: #fee2e2; color: #ef4444; }
+    .conf-mid { background: #fef3c7; color: #d97706; }
+    .conf-low { background: #f3f4f6; color: #6b7280; }
+
+    /* ── 통계 뱃지 ── */
+    .count-badge {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 26px; height: 26px; border-radius: 50%;
+        background: #8b5cf6; color: white; font-weight: 700; font-size: 0.8rem; font-family: 'Outfit', sans-serif;
+    }
+    .cat-tag {
+        display: inline-block; padding: 2px 8px; border-radius: 99px;
+        font-size: 0.65rem; font-weight: 700; margin-right: 4px; margin-bottom: 4px; text-transform: uppercase;
+    }
+    .cat-daily { background: #fee2e2; color: #ef4444; }
+    .cat-short { background: #e0e7ff; color: #4f46e5; }
+    .cat-swing { background: #dcfce3; color: #10b981; }
+    
+    .date-tag {
+        display: inline-block; padding: 2px 6px; background: #f3f4f6; color: #4b5563;
+        border-radius: 4px; font-size: 0.65rem; margin-right: 4px; margin-bottom: 4px; font-family: monospace;
+    }
+
+    .loading-wrap { padding: 40px; text-align: center; color: #6b7280; }
+    .loading-spinner {
+        display: inline-block; width: 30px; height: 30px; border: 3px solid #f3f4f6;
+        border-top-color: #8b5cf6; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .warning-box {
+        background: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 16px;
+        margin-bottom: 20px; font-size: 0.82rem; color: #92400e; border-radius: 0 8px 8px 0;
+    }
+
+    /* ── 작업 버튼 ── */
+    .action-btn {
+        background: transparent; border: 1px solid #e5e7eb; border-radius: 6px;
+        padding: 4px 8px; font-size: 0.75rem; font-weight: 600; color: #374151;
+        cursor: pointer; transition: all 0.2s; margin-left: 4px; display: inline-flex; align-items: center; gap: 4px;
+    }
+    .action-btn:hover { background: #f3f4f6; color: #111827; }
+    .action-btn.add-btn { color: #10b981; border-color: #a7f3d0; background: #ecfdf5; }
+    .action-btn.add-btn:hover { background: #d1fae5; }
+    
+    /* ── 성과 배지 ── */
+    .perf-badge { padding: 3px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; margin-left: 6px; }
+    .perf-up { background: #fee2e2; color: #ef4444; }
+    .perf-down { background: #eff6ff; color: #3b82f6; }
+    .perf-target { background: #dcfce3; color: #10b981; border: 1px solid #10b981; }
+    .perf-stop { background: #f3f4f6; color: #6b7280; text-decoration: line-through; }
+
+    /* ── 상세 모달 ── */
+    .modal-backdrop {
+        position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+        background: rgba(0,0,0,0.85); z-index: 1050; display: none; align-items: center; justify-content: center;
+    }
+    .modal-backdrop.show { display: flex; }
+    .factor-modal {
+        background: #fff; width: 360px; border-radius: 16px; padding: 24px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.2); position: relative;
+    }
+    .factor-title { font-size: 1.1rem; font-weight: 700; color: #111827; margin-bottom: 16px; border-bottom: 1px solid #f3f4f6; padding-bottom: 12px; }
+    .factor-row { margin-bottom: 14px; }
+    .factor-label { display: flex; justify-content: space-between; font-size: 0.8rem; font-weight: 600; color: #4b5563; margin-bottom: 4px; }
+    .factor-bar-bg { width: 100%; height: 8px; background: #f3f4f6; border-radius: 4px; overflow: hidden; }
+    .factor-bar { height: 100%; border-radius: 4px; transition: width 0.5s ease-out; }
+    .bar-mom { background: #ec4899; }
+    .bar-flow { background: #3b82f6; }
+    .bar-liq { background: #10b981; }
+    .close-modal { position: absolute; top: 16px; right: 16px; background: transparent; border: none; font-size: 1.2rem; cursor: pointer; color: #9ca3af; }
+    .close-modal:hover { color: #111827; }
+
+    /* 다크모드 대응 */
+    body.dark-mode .factor-modal { background: #1e222a; color: #e8ebf0; border: 1px solid #2a2f38; }
+    body.dark-mode .factor-title { color: #e8ebf0; border-bottom-color: #2a2f38; }
+    body.dark-mode .factor-label { color: #98a0ab; }
+    body.dark-mode .factor-bar-bg { background: #13161c; }
+    body.dark-mode .close-modal:hover { color: #fff; }
+</style>
+
+<div style="padding: 20px 0 60px;">
+
+    <!-- 경고 메시지 -->
+    <div class="warning-box">
+        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+        본 페이지는 XGBoost AI 모델 기반의 과거 추천 기록 및 통계를 보여줍니다. 투자 판단과 손실에 대한 책임은 본인에게 있습니다.
+    </div>
+
+    <!-- 탭 메뉴 -->
+    <div class="nav-tabs-custom">
+        <button class="nav-tab-btn active" onclick="switchTab('stats')"><i class="bi bi-bar-chart-fill me-1"></i>중복 출현 종목 (통계)</button>
+        <button class="nav-tab-btn" onclick="switchTab('history')"><i class="bi bi-calendar-check me-1"></i>일자별 추천 기록</button>
+    </div>
+
+    <!-- ==============================================
+         TAB 1: 중복 출현 종목 (통계)
+         ============================================== -->
+    <div id="tab-stats" style="display: block;">
+        <div class="stat-grid" id="statsSummaryGrid">
+            <div class="stat-card"><div class="stat-label">분석 기간</div><div class="stat-value" id="st-days">-</div></div>
+            <div class="stat-card"><div class="stat-label">분석된 추천 종목 (고유)</div><div class="stat-value highlight" id="st-unique">-</div></div>
+            <div class="stat-card"><div class="stat-label">중복 출현 종목 수</div><div class="stat-value" id="st-overlap">-</div></div>
+            <div class="stat-card"><div class="stat-label">최대 출현 횟수</div><div class="stat-value" id="st-max">-</div></div>
+        </div>
+
+        <div class="control-panel">
+            <span class="control-label"><i class="bi bi-funnel me-1"></i>분석 기준 (최근 N일)</span>
+            <select class="custom-select" id="statsDaysSelect" onchange="loadStats()">
+                <option value="5">최근 5일</option>
+                <option value="10" selected>최근 10일</option>
+                <option value="20">최근 20일</option>
+                <option value="30">최근 30일</option>
+            </select>
+            <button class="nav-tab-btn" style="background:#111827;color:white;padding:8px 16px;" onclick="loadStats()">
+                <i class="bi bi-arrow-clockwise"></i> 업데이트
+            </button>
+        </div>
+
+        <div class="table-card">
+            <div class="table-header">
+                <div class="table-title"><i class="bi bi-trophy"></i>연속 및 중복 출현 TOP 종목</div>
+            </div>
+            <div class="table-responsive">
+                <table class="table mb-0">
+                    <thead>
+                        <tr>
+                            <th class="ps-4">순위 / 종목</th>
+                            <th class="text-center">출현 횟수</th>
+                            <th class="text-start">추천된 카테고리</th>
+                            <th class="text-start pe-4">출현 일자 (최근순)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="statsTbody">
+                        <tr><td colspan="4"><div class="loading-wrap"><div class="loading-spinner"></div><div>데이터를 분석 중입니다...</div></div></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==============================================
+         TAB 2: 일자별 추천 기록
+         ============================================== -->
+    <div id="tab-history" style="display: none;">
+        <div class="control-panel">
+            <span class="control-label"><i class="bi bi-calendar-event me-1"></i>기준일 선택</span>
+            <select class="custom-select" id="historyDateSelect" onchange="loadHistoryDate()">
+                <option value="">데이터를 불러오는 중...</option>
+            </select>
+            <span style="font-size:0.8rem; color:#6b7280; margin-left:10px;" id="historyMetaInfo"></span>
+        </div>
+
+        <div id="historyContainer">
+            <div class="loading-wrap"><div class="loading-spinner"></div><div>기록을 불러오는 중입니다...</div></div>
+        </div>
+    </div>
+
+    <!-- AI 판단 근거 상세 모달 -->
+    <div class="modal-backdrop" id="factorModal" onclick="if(event.target===this) closeFactorModal()">
+        <div class="factor-modal">
+            <button class="close-modal" onclick="closeFactorModal()"><i class="bi bi-x-lg"></i></button>
+            <div class="factor-title" id="fmTitle">AI 판단 근거 상세</div>
+            
+            <div class="factor-row">
+                <div class="factor-label"><span><i class="bi bi-graph-up text-pink-500 me-1"></i>모멘텀 (가격 추세)</span><span id="fm-mom-val">0%</span></div>
+                <div class="factor-bar-bg"><div class="factor-bar bar-mom" id="fm-mom-bar" style="width:0%"></div></div>
+                <div style="font-size:0.7rem; color:#9ca3af; margin-top:4px;">최근 3개월 등락 강도</div>
+            </div>
+            <div class="factor-row">
+                <div class="factor-label"><span><i class="bi bi-people text-blue-500 me-1"></i>수급 (외국인/기관)</span><span id="fm-flow-val">0%</span></div>
+                <div class="factor-bar-bg"><div class="factor-bar bar-flow" id="fm-flow-bar" style="width:0%"></div></div>
+                <div style="font-size:0.7rem; color:#9ca3af; margin-top:4px;">최근 5일간 누적 순매수 강도</div>
+            </div>
+            <div class="factor-row">
+                <div class="factor-label"><span><i class="bi bi-water text-green-500 me-1"></i>유동성 (거래대금)</span><span id="fm-liq-val">0%</span></div>
+                <div class="factor-bar-bg"><div class="factor-bar bar-liq" id="fm-liq-bar" style="width:0%"></div></div>
+                <div style="font-size:0.7rem; color:#9ca3af; margin-top:4px;">최근 평균 거래 활성도</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    // ── 탭 전환 ──
+    function switchTab(tabId) {
+        document.querySelectorAll('.nav-tab-btn').forEach(btn => btn.classList.remove('active'));
+        event.currentTarget.classList.add('active');
+        
+        document.getElementById('tab-stats').style.display = tabId === 'stats' ? 'block' : 'none';
+        document.getElementById('tab-history').style.display = tabId === 'history' ? 'block' : 'none';
+        
+        if (tabId === 'history' && document.getElementById('historyDateSelect').options.length <= 1) {
+            loadHistoryList();
+        }
+    }
+
+    // ── 유틸 함수 ──
+    function fmtPrice(p) { return p ? Math.floor(p).toLocaleString('ko-KR') : '-'; }
+    function confClass(c) { return c >= 0.7 ? 'conf-high' : c >= 0.6 ? 'conf-mid' : 'conf-low'; }
+    function catName(k) { 
+        return k === 'daily' ? '데일리' : k === 'short' ? '단타' : k === 'swing' ? '스윙' : k; 
+    }
+
+    // ==========================================
+    // 탭 1: 통계 조회
+    // ==========================================
+    async function loadStats() {
+        const tbody = document.getElementById('statsTbody');
+        tbody.innerHTML = `<tr><td colspan="4"><div class="loading-wrap"><div class="loading-spinner"></div><div>데이터를 분석 중입니다...</div></div></td></tr>`;
+        
+        const days = document.getElementById('statsDaysSelect').value;
+        try {
+            const res = await fetch(`/recommend/stats?days=${days}`);
+            const data = await res.json();
+            
+            if (!data.ok || !data.stats || data.stats.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-5" style="color:#6b7280;">분석된 중복 출현 종목이 없습니다.</td></tr>`;
+                return;
+            }
+
+            document.getElementById('st-days').textContent = data.analyzed_days + '일';
+            document.getElementById('st-overlap').textContent = data.stats.length + '개';
+            document.getElementById('st-max').textContent = data.stats[0]?.count + '회';
+            
+            // 고유 종목 수는 API가 모든 종목의 통계를 주면 좋은데 현재 중복만 반환하므로 표시는 생략하거나 대략적으로 표시
+            document.getElementById('st-unique').textContent = '-'; 
+
+            let html = '';
+            data.stats.forEach((item, i) => {
+                const cats = item.categories.map(c => `<span class="cat-tag cat-${c}">${catName(c)}</span>`).join('');
+                const dates = item.dates.map(d => {
+                    const fmt = `${d.substring(0,4)}.${d.substring(4,6)}.${d.substring(6,8)}`;
+                    return `<span class="date-tag">${fmt}</span>`;
+                }).join('');
+                
+                html += `
+                <tr>
+                    <td class="ps-4">
+                        <div style="display:flex;align-items:center;gap:12px;">
+                            <span style="font-size:0.8rem;color:#9ca3af;font-weight:700;">#${i+1}</span>
+                            <div>
+                                <div class="stock-symbol">${item.name}</div>
+                                <div class="stock-name">${item.code} <span style="font-size:10px;color:#cbd5e1;">| ${item.market}</span></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="text-center">
+                        <span class="count-badge">${item.count}</span>
+                    </td>
+                    <td class="text-start">${cats}</td>
+                    <td class="text-start pe-4" style="max-width:300px;line-height:1.8;">${dates}</td>
+                </tr>`;
+            });
+            tbody.innerHTML = html;
+
+        } catch (e) {
+            tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger py-4">데이터 로딩 오류: ${e.message}</td></tr>`;
+        }
+    }
+
+    // ==========================================
+    // 탭 2: 일자별 기록 조회
+    // ==========================================
+    async function loadHistoryList() {
+        try {
+            const res = await fetch('/recommend/history');
+            const data = await res.json();
+            const sel = document.getElementById('historyDateSelect');
+            if (!data.dates || data.dates.length === 0) {
+                sel.innerHTML = '<option value="">기록 없음</option>';
+                document.getElementById('historyContainer').innerHTML = `<div class="loading-wrap">저장된 과거 추천 기록이 없습니다.</div>`;
+                return;
+            }
+            
+            let html = '';
+            data.dates.forEach(d => {
+                const fmt = `${d.substring(0,4)}년 ${d.substring(4,6)}월 ${d.substring(6,8)}일`;
+                html += `<option value="${d}">${fmt}</option>`;
+            });
+            sel.innerHTML = html;
+            
+            // 첫 번째 항목 자동 조회
+            loadHistoryDate();
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function loadHistoryDate() {
+        const date = document.getElementById('historyDateSelect').value;
+        if (!date) return;
+        
+        const container = document.getElementById('historyContainer');
+        container.innerHTML = `<div class="loading-wrap"><div class="loading-spinner"></div><div>데이터를 불러오는 중입니다...</div></div>`;
+        
+        try {
+            const res = await fetch(`/recommend/history/${date}`);
+            const data = await res.json();
+            if (!data.ok) {
+                container.innerHTML = `<div class="loading-wrap text-danger">데이터를 찾을 수 없습니다.</div>`;
+                return;
+            }
+
+            document.getElementById('historyMetaInfo').innerHTML = 
+                `<i class="bi bi-clock-history me-1"></i>생성시간: ${data.generated_at?.substring(0,19)} | 총 분석: ${data.n_total}종목 | 추천: <b>${data.n_buy}</b>종목`;
+
+            const categories = [
+                { key: 'daily', title: '🔥 데일리 (3일 내 단기)' },
+                { key: 'short', title: '📈 단타 (5일 내)' },
+                { key: 'swing', title: '📊 스윙 (14일 내)' }
+            ];
+
+            let html = '';
+            categories.forEach(cat => {
+                const items = data[cat.key] || [];
+                
+                html += `
+                <div class="table-card">
+                    <div class="table-header">
+                        <div class="table-title">${cat.title} <span style="color:#9ca3af;font-size:0.8rem;margin-left:8px;font-weight:500;">${items.length}종목</span></div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table mb-0">
+                            <thead>
+                                <tr>
+                                    <th class="ps-4">순위</th>
+                                    <th>종목명 (코드)</th>
+                                    <th>추천당시 가격</th>
+                                    <th>현재가 (성과)</th>
+                                    <th>매수가</th>
+                                    <th>목표가 (기대수익)</th>
+                                    <th>손절가</th>
+                                    <th>AI 신뢰도</th>
+                                    <th class="pe-4 text-center">작업</th>
+                                </tr>
+                            </thead>
+                            <tbody>`;
+                
+                if (items.length === 0) {
+                    html += `<tr><td colspan="9" class="text-center py-4" style="color:#9ca3af;">추천된 종목이 없습니다.</td></tr>`;
+                } else {
+                    items.forEach((item, i) => {
+                        const r_ret = (item.expected_return * 100).toFixed(1);
+                        const r_conf = (item.confidence * 100).toFixed(1);
+                        
+                        // factors json string
+                        const fStr = encodeURIComponent(JSON.stringify(item.factors || {}));
+
+                        html += `
+                        <tr>
+                            <td class="ps-4" style="color:#9ca3af;font-weight:700;">${i+1}</td>
+                            <td>
+                                <div class="stock-symbol">${item.name} <span class="cat-tag" style="background:#f3f4f6;color:#6b7280;font-size:0.6rem;">${item.market}</span></div>
+                                <div class="stock-name">${item.code}</div>
+                            </td>
+                            <td><span class="price">${fmtPrice(item.price)}원</span></td>
+                            <td>
+                                <span class="live-price" data-code="${item.code}" data-entry="${item.entry}" data-target="${item.target}" data-stop="${item.stop}">
+                                    <i class="bi bi-arrow-repeat text-muted"></i> 조회중...
+                                </span>
+                            </td>
+                            <td><span class="price">${fmtPrice(item.entry)}원</span></td>
+                            <td><span class="target-price">${fmtPrice(item.target)}원 <span style="font-size:0.75rem;margin-left:4px;">(+${r_ret}%)</span></span></td>
+                            <td><span class="stop-price">${fmtPrice(item.stop)}원</span></td>
+                            <td>
+                                <span class="conf-badge ${confClass(item.confidence)}">${r_conf}%</span>
+                            </td>
+                            <td class="pe-4 text-center">
+                                <button class="action-btn add-btn" onclick="addToWatchlist('${item.code}', '${item.market}', this)" title="관심종목 추가"><i class="bi bi-bookmark-plus"></i></button>
+                                <button class="action-btn" onclick="openFactorModal('${item.name}', '${fStr}')" title="AI 판단 근거 상세"><i class="bi bi-search"></i></button>
+                            </td>
+                        </tr>`;
+                    });
+                }
+                html += `</tbody></table></div></div>`;
+            });
+            container.innerHTML = html;
+            
+            // 실시간 가격 조회 시작
+            fetchLivePrices();
+
+        } catch (e) {
+            container.innerHTML = `<div class="loading-wrap text-danger">오류 발생: ${e.message}</div>`;
+        }
+    }
+
+    // ==========================================
+    // 부가 기능: 실시간 가격 조회
+    // ==========================================
+    async function fetchLivePrices() {
+        const elements = document.querySelectorAll('.live-price');
+        for (const el of elements) {
+            const code = el.getAttribute('data-code');
+            const entry = parseFloat(el.getAttribute('data-entry'));
+            const target = parseFloat(el.getAttribute('data-target'));
+            const stop = parseFloat(el.getAttribute('data-stop'));
+            
+            try {
+                const res = await fetch('/kiwoom/best/price/' + code);
+                if (res.ok) {
+                    const data = await res.json();
+                    const cp = data.price;
+                    const isDelayed = data.price_source === 'naver';
+                    const delayedTag = isDelayed
+                        ? `<span style="font-size:0.62rem;color:#9ca3af;margin-left:3px;">(지연)</span>`
+                        : '';
+
+                    let badge = '';
+                    if (cp >= target) {
+                        badge = `<span class="perf-badge perf-target">🎯 목표달성</span>`;
+                    } else if (cp <= stop) {
+                        badge = `<span class="perf-badge perf-stop">⚠️ 손절터치</span>`;
+                    } else {
+                        const ret = ((cp / entry) - 1) * 100;
+                        const retCls = ret > 0 ? 'perf-up' : (ret < 0 ? 'perf-down' : '');
+                        const retSign = ret > 0 ? '+' : '';
+                        badge = `<span class="perf-badge ${retCls}">${retSign}${ret.toFixed(1)}%</span>`;
+                    }
+
+                    el.innerHTML = `<span class="price">${fmtPrice(cp)}원</span>${delayedTag} ${badge}`;
+                } else {
+                    el.innerHTML = `<span style="font-size:0.75rem;color:#9ca3af;">조회 실패</span>`;
+                }
+            } catch {
+                el.innerHTML = `<span style="font-size:0.75rem;color:#9ca3af;">오류</span>`;
+            }
+        }
+    }
+
+    // ==========================================
+    // 부가 기능: 관심종목 편입
+    // ==========================================
+    async function addToWatchlist(code, market, btnElement) {
+        let symbol = code;
+        if (market === 'KOSPI') symbol += '.KS';
+        if (market === 'KOSDAQ') symbol += '.KQ';
+        
+        try {
+            // 현재 리스트 가져오기
+            let list = [];
+            const res = await fetch('/watchlist');
+            if (res.ok) list = await res.json();
+            
+            if (list.includes(symbol)) {
+                alert('이미 관심종목에 있습니다.');
+                return;
+            }
+            
+            list.push(symbol);
+            
+            // 저장
+            const postRes = await fetch('/watchlist', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ watchlist: list })
+            });
+            
+            if (postRes.ok) {
+                const originalHtml = btnElement.innerHTML;
+                btnElement.innerHTML = '<i class="bi bi-check-lg"></i>';
+                btnElement.style.background = '#10b981';
+                btnElement.style.color = '#fff';
+                btnElement.style.borderColor = '#10b981';
+                setTimeout(() => {
+                    btnElement.innerHTML = originalHtml;
+                    btnElement.style = ''; // 리셋
+                }, 2000);
+            }
+        } catch (e) {
+            alert('관심종목 추가 중 오류가 발생했습니다.');
+        }
+    }
+
+    // ==========================================
+    // 부가 기능: AI 상세 모달
+    // ==========================================
+    function openFactorModal(name, factorsStr) {
+        document.getElementById('fmTitle').textContent = `${name} - AI 판단 근거`;
+        
+        try {
+            const factors = JSON.parse(decodeURIComponent(factorsStr));
+            const mom = (factors.momentum || 0) * 100;
+            const flow = (factors.flow || 0) * 100;
+            const liq = (factors.liquidity || 0) * 100;
+            
+            document.getElementById('fm-mom-val').textContent = mom.toFixed(1) + '점';
+            document.getElementById('fm-mom-bar').style.width = mom + '%';
+            
+            document.getElementById('fm-flow-val').textContent = flow.toFixed(1) + '점';
+            document.getElementById('fm-flow-bar').style.width = flow + '%';
+            
+            document.getElementById('fm-liq-val').textContent = liq.toFixed(1) + '점';
+            document.getElementById('fm-liq-bar').style.width = liq + '%';
+            
+        } catch(e) {
+            console.error(e);
+        }
+        
+        document.getElementById('factorModal').classList.add('show');
+    }
+
+    function closeFactorModal() {
+        document.getElementById('factorModal').classList.remove('show');
+    }
+
+    // 초기 로드 시 통계 먼저 표시
+    window.onload = () => {
+        loadStats();
+    };
+</script>
+{% endblock %}

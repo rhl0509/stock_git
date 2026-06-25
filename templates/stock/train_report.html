@@ -1,0 +1,204 @@
+{% extends "stock/stock_layout.html" %}
+{% block title %}학습 리포트{% endblock %}
+{% block page_name %}ML 학습 리포트{% endblock %}
+
+{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+.panel {
+    background: var(--bg-2); border: 1px solid var(--line-1);
+    border-radius: var(--r-3); padding: 20px 22px; margin-bottom: 14px;
+}
+.panel-title {
+    font-size: 0.72rem; font-weight: 700; color: var(--fg-3);
+    text-transform: uppercase; letter-spacing: .08em;
+    font-family: var(--font-mono); margin-bottom: 16px;
+}
+.meta-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px;
+    margin-bottom: 14px;
+}
+.meta-card {
+    background: var(--bg-3); border-radius: var(--r-2); padding: 12px 14px; text-align: center;
+}
+.meta-label { font-size: 0.65rem; color: var(--fg-3); text-transform: uppercase; letter-spacing: .06em; }
+.meta-val   { font-size: 1.3rem; font-weight: 700; color: var(--fg-1); margin-top: 4px; font-family: var(--font-mono); }
+
+.label-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px;
+}
+@media(max-width:640px){ .label-grid{ grid-template-columns: 1fr; } }
+.label-card {
+    background: var(--bg-3); border-radius: var(--r-3); padding: 16px 18px;
+}
+.label-name { font-size: 0.78rem; font-weight: 700; color: var(--fg-2); margin-bottom: 12px; }
+.kv-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.kv-key { font-size: 0.72rem; color: var(--fg-3); }
+.kv-val { font-size: 0.88rem; font-weight: 700; font-family: var(--font-mono); }
+.kv-val.good { color: #34d399; }
+.kv-val.warn { color: #fbbf24; }
+.kv-val.bad  { color: #f87171; }
+
+.shap-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+.stab {
+    padding: 6px 16px; border-radius: 8px; border: 1px solid var(--line-2);
+    font-size: 0.8rem; font-weight: 600; cursor: pointer;
+    background: var(--bg-3); color: var(--fg-2); transition: all .15s;
+}
+.stab.active { background: var(--lime); color: #000; border-color: var(--lime); }
+.chart-wrap { position: relative; height: 380px; }
+
+.spinner-msg { text-align: center; padding: 60px; color: var(--fg-3); font-size: 0.9rem; }
+.err-msg { background: #fee2e2; color: #dc2626; border-radius: 10px; padding: 12px 16px; }
+</style>
+
+<div class="page-tabs">
+    <a href="/stock_ai_performance" class="ptab {% if request.path == '/stock_ai_performance' %}active{% endif %}"><i class="bi bi-graph-up-arrow"></i> 성과 검증</a>
+    <a href="/stock_train_report"   class="ptab {% if request.path == '/stock_train_report' %}active{% endif %}"><i class="bi bi-file-bar-graph"></i> 학습 리포트</a>
+</div>
+<div id="loading" class="spinner-msg">데이터 로딩 중...</div>
+<div id="error-area" class="err-msg" style="display:none;"></div>
+<div id="main-area" style="display:none;">
+
+    <!-- 학습 메타 -->
+    <div class="panel">
+        <div class="panel-title">학습 정보</div>
+        <div class="meta-grid">
+            <div class="meta-card">
+                <div class="meta-label">학습 종목</div>
+                <div class="meta-val" id="m-tickers">—</div>
+            </div>
+            <div class="meta-card">
+                <div class="meta-label">샘플 수</div>
+                <div class="meta-val" id="m-samples">—</div>
+            </div>
+            <div class="meta-card">
+                <div class="meta-label">피처 수</div>
+                <div class="meta-val" id="m-features">—</div>
+            </div>
+            <div class="meta-card">
+                <div class="meta-label">학습 일시</div>
+                <div class="meta-val" id="m-date" style="font-size:.85rem;">—</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 라벨별 성능 -->
+    <div class="panel">
+        <div class="panel-title">라벨별 CV 성능</div>
+        <div class="label-grid" id="label-cards"></div>
+    </div>
+
+    <!-- SHAP 중요도 -->
+    <div class="panel">
+        <div class="panel-title">SHAP 피처 중요도 (상위 20개)</div>
+        <div class="shap-tabs">
+            <button class="stab active" onclick="switchShap('daily')">Daily</button>
+            <button class="stab" onclick="switchShap('short')">Short</button>
+            <button class="stab" onclick="switchShap('swing')">Swing</button>
+        </div>
+        <div class="chart-wrap"><canvas id="shap-chart"></canvas></div>
+    </div>
+
+</div>
+
+<script>
+let shapData = {};
+let shapChart = null;
+
+async function load() {
+    try {
+        const res  = await fetch('/api/train_report_data');
+        const json = await res.json();
+        if (!json.ok) { showError(json.error); return; }
+        render(json.report, json.shap);
+    } catch(e) {
+        showError('로드 실패: ' + e.message);
+    }
+}
+
+function showError(msg) {
+    document.getElementById('loading').style.display = 'none';
+    const el = document.getElementById('error-area');
+    el.textContent = '⚠ ' + msg;
+    el.style.display = 'block';
+}
+
+function render(r, shap) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('main-area').style.display = 'block';
+
+    // 메타
+    document.getElementById('m-tickers').textContent  = r.n_tickers?.toLocaleString() ?? '—';
+    document.getElementById('m-samples').textContent  = r.n_samples?.toLocaleString() ?? '—';
+    document.getElementById('m-features').textContent = r.n_features ?? '—';
+    const dt = r.trained_at ? r.trained_at.replace('T', ' ').slice(0, 16) : '—';
+    document.getElementById('m-date').textContent = dt;
+
+    // 라벨 카드
+    const labelMeta = {
+        daily: {title: '🔥 Daily (3일 +2%)', roundsLabel: 'Rounds'},
+        short: {title: '📈 Short (5일 +3%)', roundsLabel: 'Rounds'},
+        swing: {title: '📊 Swing (14일 +7%)', roundsLabel: 'Rounds'},
+    };
+    const cards = Object.entries(r.labels || {}).map(([k, v]) => {
+        const auc  = v.cv_auc ?? 0;
+        const acc  = v.cv_acc ?? 0;
+        const buy  = (v.buy_ratio ?? 0) * 100;
+        const aucCls = auc >= 0.70 ? 'good' : auc >= 0.62 ? 'warn' : 'bad';
+        const accCls = acc >= 0.60 ? 'good' : acc >= 0.52 ? 'warn' : 'bad';
+        const models = [v.has_lgb && 'LGB', v.has_cat && 'CAT'].filter(Boolean).join('+');
+        return `
+        <div class="label-card">
+            <div class="label-name">${labelMeta[k]?.title ?? k}</div>
+            <div class="kv-row"><span class="kv-key">CV AUC</span><span class="kv-val ${aucCls}">${auc.toFixed(4)}</span></div>
+            <div class="kv-row"><span class="kv-key">CV Acc</span><span class="kv-val ${accCls}">${(acc*100).toFixed(1)}%</span></div>
+            <div class="kv-row"><span class="kv-key">매수 비율</span><span class="kv-val">${buy.toFixed(1)}%</span></div>
+            <div class="kv-row"><span class="kv-key">Rounds</span><span class="kv-val">${v.n_rounds ?? '—'}</span></div>
+            <div class="kv-row"><span class="kv-key">앙상블</span><span class="kv-val">XGB+${models || '—'}</span></div>
+        </div>`;
+    }).join('');
+    document.getElementById('label-cards').innerHTML = cards;
+
+    // SHAP 데이터 저장
+    shapData = shap;
+    switchShap('daily');
+}
+
+function switchShap(label) {
+    document.querySelectorAll('.stab').forEach((b, i) =>
+        b.classList.toggle('active', ['daily','short','swing'][i] === label));
+
+    const items = (shapData[label] || []).slice(0, 20).reverse();
+    const labels = items.map(x => x.feature);
+    const vals   = items.map(x => +(x.shap_importance).toFixed(4));
+
+    const ctx = document.getElementById('shap-chart').getContext('2d');
+    if (shapChart) shapChart.destroy();
+    shapChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: 'SHAP 중요도',
+                data: vals,
+                backgroundColor: vals.map((_, i) =>
+                    i >= items.length - 3 ? 'rgba(132,204,22,0.8)' : 'rgba(99,102,241,0.6)'),
+                borderRadius: 4,
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                y: { ticks: { color: '#e5e7eb', font: { size: 11 } }, grid: { display: false } }
+            }
+        }
+    });
+}
+
+load();
+</script>
+{% endblock %}

@@ -1,0 +1,482 @@
+{% extends "stock/stock_layout.html" %}
+{% block title %}AI 성과 검증 — GAGYE{% endblock %}
+{% block page_name %}AI 추천 성과 검증{% endblock %}
+
+{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+    /* ── 레이아웃 ── */
+    .perf-wrap { padding: 0 0 60px; }
+
+    /* ── 컨트롤 ── */
+    .ctrl-bar {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; flex-wrap: wrap; margin-bottom: 20px;
+    }
+    .ctrl-bar h2 {
+        font-size: 1.05rem; font-weight: 700; color: var(--fg-1); margin: 0;
+    }
+    .ctrl-bar p { font-size: 0.78rem; color: var(--fg-2); margin: 3px 0 0; }
+    .days-select {
+        background: var(--bg-3); border: 1px solid var(--line-2);
+        color: var(--fg-1); padding: 7px 14px; border-radius: var(--r-2);
+        font-size: 0.82rem; font-weight: 600; outline: none; cursor: pointer;
+    }
+    .days-select option { background: var(--bg-2); }
+
+    /* ── 스탯 카드 ── */
+    .stat-row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px; margin-bottom: 16px;
+    }
+    @media(max-width:768px){ .stat-row{ grid-template-columns: repeat(2,1fr); } }
+    .stat-card {
+        background: var(--bg-2); border: 1px solid var(--line-1);
+        border-radius: var(--r-3); padding: 16px 18px;
+    }
+    .stat-label {
+        font-size: 0.65rem; font-weight: 700; letter-spacing: .08em;
+        text-transform: uppercase; color: var(--fg-3); margin-bottom: 8px;
+        font-family: var(--font-mono);
+    }
+    .stat-val {
+        font-size: 1.9rem; font-weight: 700; line-height: 1;
+        font-family: var(--font-mono);
+    }
+    .stat-val.lime  { color: var(--lime); }
+    .stat-val.green { color: #34d399; }
+    .stat-val.red   { color: var(--expense); }
+    .stat-val.amber { color: #fbbf24; }
+    .stat-sub { font-size: 0.7rem; color: var(--fg-3); margin-top: 5px; }
+
+    /* ── 차트 패널 ── */
+    .chart-row {
+        display: grid; grid-template-columns: 1fr 1fr;
+        gap: 12px; margin-bottom: 12px;
+    }
+    @media(max-width:768px){ .chart-row{ grid-template-columns: 1fr; } }
+    .panel {
+        background: var(--bg-2); border: 1px solid var(--line-1);
+        border-radius: var(--r-3); padding: 18px 20px;
+    }
+    .panel-title {
+        font-size: 0.78rem; font-weight: 700; color: var(--fg-2);
+        text-transform: uppercase; letter-spacing: .07em;
+        font-family: var(--font-mono); margin-bottom: 14px;
+        display: flex; align-items: center; gap: 8px;
+    }
+    .panel-title i { color: var(--lime); }
+    .chart-wrap { position: relative; height: 240px; }
+    .chart-full  { background: var(--bg-2); border: 1px solid var(--line-1);
+                   border-radius: var(--r-3); padding: 18px 20px; margin-bottom: 12px; }
+    .chart-full .chart-wrap { height: 180px; }
+
+    /* ── 소스 비교 ── */
+    .source-row {
+        display: grid; grid-template-columns: 1fr 1fr;
+        gap: 12px; margin-bottom: 12px;
+    }
+    @media(max-width:600px){ .source-row{ grid-template-columns: 1fr; } }
+    .source-card {
+        background: var(--bg-2); border: 1px solid var(--line-1);
+        border-radius: var(--r-3); padding: 16px 18px;
+    }
+    .source-name {
+        font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .08em; color: var(--fg-3); font-family: var(--font-mono);
+        margin-bottom: 10px;
+    }
+    .source-stats { display: flex; gap: 16px; flex-wrap: wrap; }
+    .src-item { text-align: center; }
+    .src-num { font-size: 1.3rem; font-weight: 700; font-family: var(--font-mono); line-height: 1; }
+    .src-lbl { font-size: 0.65rem; color: var(--fg-3); margin-top: 2px; }
+
+    /* ── 테이블 ── */
+    .tbl-panel {
+        background: var(--bg-2); border: 1px solid var(--line-1);
+        border-radius: var(--r-3); overflow: hidden; margin-bottom: 12px;
+    }
+    .tbl-head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 14px 18px; border-bottom: 1px solid var(--line-1);
+    }
+    .tbl-title { font-size: 0.82rem; font-weight: 700; color: var(--fg-1); }
+    .tbl-wrap  { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    thead { background: var(--bg-3); }
+    th {
+        padding: 10px 14px; text-align: right;
+        color: var(--fg-3); font-weight: 600; font-size: 0.68rem;
+        text-transform: uppercase; letter-spacing: .05em;
+        white-space: nowrap; font-family: var(--font-mono);
+    }
+    th:first-child, td:first-child { text-align: left; }
+    td {
+        padding: 10px 14px; text-align: right;
+        border-bottom: 1px solid var(--line-1); color: var(--fg-1);
+        vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+
+    .sname { font-weight: 600; color: var(--fg-1); }
+    .scode { font-size: 0.7rem; color: var(--fg-3); font-family: var(--font-mono); margin-left: 5px; }
+    .cat-badge {
+        display: inline-flex; padding: 2px 7px; border-radius: 4px;
+        font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+        font-family: var(--font-mono);
+    }
+    .cat-daily { background: rgba(198,242,78,.12); color: var(--lime); }
+    .cat-short { background: rgba(251,191,36,.10); color: #fbbf24; }
+    .cat-swing { background: rgba(99,179,237,.10); color: #63b3ed; }
+    .src-badge {
+        font-size: 0.65rem; font-weight: 700; font-family: var(--font-mono);
+        color: var(--fg-3); border: 1px solid var(--line-2);
+        padding: 1px 6px; border-radius: 4px; text-transform: uppercase;
+    }
+    .src-model  { color: var(--lime); border-color: var(--lime-border); }
+
+    .status-badge {
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 3px 9px; border-radius: 99px;
+        font-size: 0.72rem; font-weight: 700;
+    }
+    .st-HIT  { background: rgba(52,211,153,.12); color: #34d399; }
+    .st-FAIL { background: rgba(248,113,113,.12); color: var(--expense); }
+    .st-HOLD { background: rgba(251,191,36,.10);  color: #fbbf24; }
+
+    .ret-pos { color: #34d399; font-weight: 600; font-family: var(--font-mono); }
+    .ret-neg { color: var(--expense); font-weight: 600; font-family: var(--font-mono); }
+    .ret-neu { color: var(--fg-3); font-family: var(--font-mono); }
+
+    /* ── 로딩 / 빈 화면 ── */
+    .loading-box {
+        display: flex; flex-direction: column; align-items: center;
+        padding: 60px 0; color: var(--fg-3); gap: 12px;
+    }
+    .spin {
+        width: 32px; height: 32px;
+        border: 3px solid var(--line-2); border-top-color: var(--lime);
+        border-radius: 50%; animation: spin .9s linear infinite;
+    }
+    @keyframes spin { to{ transform: rotate(360deg); } }
+    .empty-box {
+        padding: 40px; text-align: center; color: var(--fg-3); font-size: 0.85rem;
+    }
+    .empty-box i { font-size: 2rem; display: block; margin-bottom: 8px; }
+
+    /* ── 필터 탭 ── */
+    .filter-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .ftab {
+        padding: 4px 12px; border-radius: 99px; font-size: 0.75rem;
+        font-weight: 700; cursor: pointer; border: 1px solid var(--line-2);
+        background: transparent; color: var(--fg-3); transition: all .15s;
+    }
+    .ftab.active, .ftab:hover { background: var(--lime-soft); color: var(--lime); border-color: var(--lime-border); }
+</style>
+
+<div class="page-tabs">
+    <a href="/stock_ai_performance" class="ptab {% if request.path == '/stock_ai_performance' %}active{% endif %}"><i class="bi bi-graph-up-arrow"></i> 성과 검증</a>
+    <a href="/stock_train_report"   class="ptab {% if request.path == '/stock_train_report' %}active{% endif %}"><i class="bi bi-file-bar-graph"></i> 학습 리포트</a>
+</div>
+<div class="perf-wrap">
+
+    <!-- 컨트롤 바 -->
+    <div class="ctrl-bar">
+        <div>
+            <h2><i class="bi bi-bullseye" style="color:var(--lime);margin-right:6px;"></i>AI 추천 성과 검증</h2>
+            <p>과거 AI가 추천한 종목이 목표가에 도달했는지 로컬 OHLCV로 검증합니다.</p>
+        </div>
+        <select id="daysSelect" class="days-select" onchange="loadPerf()">
+            <option value="7" selected>최근 7일</option>
+            <option value="14">최근 14일</option>
+            <option value="30">최근 30일</option>
+        </select>
+    </div>
+
+    <div id="root">
+        <div class="loading-box"><div class="spin"></div><span>분석 중...</span></div>
+    </div>
+
+</div>
+
+<script>
+const C = {
+    bg0: '#080b10', bg2: '#161c27', bg3: '#1d2435',
+    fg1: '#e4eaf6', fg2: '#8892a4', fg3: '#4a5570',
+    line1: 'rgba(255,255,255,0.07)', line2: 'rgba(255,255,255,0.13)',
+    lime: '#c6f24e', green: '#34d399', red: '#f87171', amber: '#fbbf24', blue: '#63b3ed',
+};
+
+Chart.defaults.color      = C.fg2;
+Chart.defaults.borderColor = C.line1;
+Chart.defaults.font.family = "'Inter', sans-serif";
+
+let charts = {};
+
+function destroyCharts() {
+    Object.values(charts).forEach(c => c.destroy());
+    charts = {};
+}
+
+async function loadPerf() {
+    const days = document.getElementById('daysSelect').value;
+    document.getElementById('root').innerHTML =
+        `<div class="loading-box"><div class="spin"></div><span>데이터 분석 중 (${days}일)...</span></div>`;
+    destroyCharts();
+
+    try {
+        const res  = await fetch(`/recommend/perf-data?days=${days}`);
+        const data = await res.json();
+        if (!data.ok || !data.results.length) {
+            document.getElementById('root').innerHTML =
+                `<div class="empty-box"><i class="bi bi-inbox"></i>분석할 추천 데이터가 없습니다.<br><small>run_daily_recommend.bat을 실행하면 데이터가 쌓입니다.</small></div>`;
+            return;
+        }
+        render(data);
+    } catch(e) {
+        document.getElementById('root').innerHTML =
+            `<div class="empty-box" style="color:var(--expense)"><i class="bi bi-exclamation-triangle"></i>${e.message}</div>`;
+    }
+}
+
+function render(data) {
+    const s   = data.summary;
+    const cs  = data.category_stats;
+    const ss  = data.source_stats;
+    const tl  = data.timeline;
+    const res = data.results;
+
+    /* 필터링용 상태 */
+    let activeFilter = 'all';
+
+    const html = `
+    <!-- 스탯 카드 -->
+    <div class="stat-row">
+        <div class="stat-card">
+            <div class="stat-label">총 추천 건</div>
+            <div class="stat-val lime">${s.total}</div>
+            <div class="stat-sub">분석 기간 ${data.analyzed_days}일</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">목표 달성률</div>
+            <div class="stat-val ${s.hit_rate >= 50 ? 'green' : s.hit_rate >= 35 ? 'amber' : 'red'}">${s.hit_rate}%</div>
+            <div class="stat-sub">HIT ${s.hit} / FAIL ${s.fail} / HOLD ${s.hold}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">평균 수익률</div>
+            <div class="stat-val ${s.avg_return >= 0 ? 'green' : 'red'}">${s.avg_return > 0 ? '+' : ''}${s.avg_return}%</div>
+            <div class="stat-sub">종료+보유 포함</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">누적 가상 수익</div>
+            <div class="stat-val ${(tl.at(-1)?.cum_return||0) >= 0 ? 'green' : 'red'}" id="cumRetVal">
+                ${((tl.at(-1)?.cum_return)||0) >= 0 ? '+' : ''}${(tl.at(-1)?.cum_return||0).toFixed(1)}%
+            </div>
+            <div class="stat-sub">일별 평균 수익 누계</div>
+        </div>
+    </div>
+
+    <!-- 차트 2개 -->
+    <div class="chart-row">
+        <div class="panel">
+            <div class="panel-title"><i class="bi bi-pie-chart-fill"></i>HIT / FAIL / HOLD</div>
+            <div class="chart-wrap"><canvas id="donutChart"></canvas></div>
+        </div>
+        <div class="panel">
+            <div class="panel-title"><i class="bi bi-bar-chart-fill"></i>카테고리별 달성률</div>
+            <div class="chart-wrap"><canvas id="catChart"></canvas></div>
+        </div>
+    </div>
+
+    <!-- 누적 수익률 차트 -->
+    <div class="chart-full">
+        <div class="panel-title"><i class="bi bi-graph-up-arrow"></i>가상 누적 수익률 추이</div>
+        <div class="chart-wrap"><canvas id="cumChart"></canvas></div>
+    </div>
+
+    <!-- 소스 비교 -->
+    <div class="source-row">
+        ${['model','factor'].map(src => {
+            const v = ss[src] || {total:0,hit:0,fail:0,hold:0,hit_rate:0,avg_return:0};
+            return `<div class="source-card">
+                <div class="source-name">${src === 'model' ? '🤖 AI 모델 추천' : '📊 팩터 기반 추천'}</div>
+                <div class="source-stats">
+                    <div class="src-item"><div class="src-num lime">${v.total}</div><div class="src-lbl">총 추천</div></div>
+                    <div class="src-item"><div class="src-num green">${v.hit}</div><div class="src-lbl">달성</div></div>
+                    <div class="src-item"><div class="src-num red">${v.fail}</div><div class="src-lbl">손절</div></div>
+                    <div class="src-item"><div class="src-num" style="color:var(--fg-2)">${v.hit_rate}%</div><div class="src-lbl">달성률</div></div>
+                    <div class="src-item"><div class="src-num ${v.avg_return >= 0 ? 'green' : 'red'}">${v.avg_return > 0 ? '+' : ''}${v.avg_return}%</div><div class="src-lbl">평균 수익</div></div>
+                </div>
+            </div>`;
+        }).join('')}
+    </div>
+
+    <!-- 결과 테이블 -->
+    <div class="tbl-panel">
+        <div class="tbl-head">
+            <span class="tbl-title">전체 추천 결과</span>
+            <div class="filter-tabs">
+                ${['all','HIT','FAIL','HOLD'].map(f =>
+                    `<button class="ftab ${f==='all'?'active':''}" onclick="filterTable('${f}',this)">${f==='all'?'전체':f}</button>`
+                ).join('')}
+            </div>
+        </div>
+        <div class="tbl-wrap">
+            <table id="resTable">
+                <thead>
+                    <tr>
+                        <th>추천일</th>
+                        <th>종목</th>
+                        <th>카테고리</th>
+                        <th>소스</th>
+                        <th>진입가</th>
+                        <th>목표가</th>
+                        <th>손절가</th>
+                        <th>신뢰도</th>
+                        <th>실제 수익</th>
+                        <th>결과</th>
+                    </tr>
+                </thead>
+                <tbody id="resBody"></tbody>
+            </table>
+        </div>
+    </div>`;
+
+    document.getElementById('root').innerHTML = html;
+
+    /* 차트 그리기 */
+    drawDonut(s);
+    drawCatBar(cs);
+    drawCumLine(tl);
+
+    /* 테이블 채우기 */
+    window._allResults = res;
+    fillTable(res);
+
+    window.filterTable = function(f, btn) {
+        document.querySelectorAll('.ftab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        fillTable(f === 'all' ? window._allResults : window._allResults.filter(r => r.status === f));
+    };
+}
+
+function fillTable(rows) {
+    const catCls = { daily:'cat-daily', short:'cat-short', swing:'cat-swing' };
+    const stCls  = { HIT:'st-HIT', FAIL:'st-FAIL', HOLD:'st-HOLD' };
+    const stLbl  = { HIT:'목표달성', FAIL:'손절터치', HOLD:'보유중' };
+    const stIcon = { HIT:'bi-check-circle-fill', FAIL:'bi-x-circle-fill', HOLD:'bi-dash-circle-fill' };
+
+    document.getElementById('resBody').innerHTML = rows.map(r => {
+        const retCls = r.actual_return > 0 ? 'ret-pos' : r.actual_return < 0 ? 'ret-neg' : 'ret-neu';
+        const retStr = (r.actual_return > 0 ? '+' : '') + r.actual_return.toFixed(2) + '%';
+        return `<tr data-status="${r.status}">
+            <td style="color:var(--fg-3);font-family:var(--font-mono)">${r.rec_date}</td>
+            <td><span class="sname">${r.name}</span><span class="scode">${r.code}</span></td>
+            <td><span class="cat-badge ${catCls[r.category]||''}">${r.category}</span></td>
+            <td><span class="src-badge ${r.source==='model'?'src-model':''}">${r.source}</span></td>
+            <td style="font-family:var(--font-mono)">${(r.entry||0).toLocaleString()}</td>
+            <td style="color:#34d399;font-family:var(--font-mono)">${(r.target||0).toLocaleString()}</td>
+            <td style="color:var(--expense);font-family:var(--font-mono)">${(r.stop||0).toLocaleString()}</td>
+            <td style="font-family:var(--font-mono)">${(r.confidence*100).toFixed(1)}%</td>
+            <td class="${retCls}">${retStr}</td>
+            <td><span class="status-badge ${stCls[r.status]}"><i class="bi ${stIcon[r.status]}"></i>${stLbl[r.status]}</span></td>
+        </tr>`;
+    }).join('');
+}
+
+function drawDonut(s) {
+    charts.donut = new Chart(document.getElementById('donutChart'), {
+        type: 'doughnut',
+        data: {
+            labels: ['목표달성 (HIT)', '손절터치 (FAIL)', '보유중 (HOLD)'],
+            datasets: [{
+                data: [s.hit, s.fail, s.hold],
+                backgroundColor: [C.green, C.red, C.amber],
+                borderWidth: 0, hoverOffset: 4,
+            }],
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false, cutout: '68%',
+            plugins: {
+                legend: { position: 'bottom', labels: { color: C.fg2, boxWidth: 12, padding: 14 } },
+                tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw}건` } },
+            },
+        },
+    });
+}
+
+function drawCatBar(cs) {
+    const cats  = ['daily', 'short', 'swing'];
+    const labels = ['단기 (Daily)', '중기 (Short)', '스윙 (Swing)'];
+    charts.cat = new Chart(document.getElementById('catChart'), {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                { label: '달성률 (%)', data: cats.map(c => cs[c]?.hit_rate || 0),
+                  backgroundColor: [C.lime+'33', C.amber+'33', C.blue+'33'],
+                  borderColor:     [C.lime, C.amber, C.blue],
+                  borderWidth: 1.5, borderRadius: 6 },
+            ],
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: {
+                x: { ticks: { color: C.fg2 }, grid: { color: C.line1 } },
+                y: { min: 0, max: 100, ticks: { color: C.fg2, callback: v => v + '%' }, grid: { color: C.line1 } },
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: {
+                    label: ctx => ` 달성률 ${ctx.raw}% (${['daily','short','swing'][ctx.dataIndex] in (window._cs||{}) ? '' : ''}건)`,
+                    afterLabel: ctx => {
+                        const k = cats[ctx.dataIndex];
+                        const v = window._cs?.[k] || {};
+                        return ` HIT ${v.hit||0} / FAIL ${v.fail||0} / HOLD ${v.hold||0}`;
+                    },
+                }},
+            },
+        },
+    });
+    window._cs = cs;
+}
+
+function drawCumLine(tl) {
+    if (!tl.length) return;
+    const labels = tl.map(t => t.date);
+    const vals   = tl.map(t => t.cum_return);
+    const isPos  = vals.at(-1) >= 0;
+
+    charts.cum = new Chart(document.getElementById('cumChart'), {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                label: '누적 수익률 (%)',
+                data: vals,
+                borderColor: isPos ? C.green : C.red,
+                backgroundColor: isPos ? C.green + '18' : C.red + '18',
+                borderWidth: 2, fill: true, tension: 0.35,
+                pointBackgroundColor: isPos ? C.green : C.red,
+                pointRadius: 3, pointHoverRadius: 5,
+            }],
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: {
+                x: { ticks: { color: C.fg2 }, grid: { color: C.line1 } },
+                y: { ticks: { color: C.fg2, callback: v => v + '%' }, grid: { color: C.line1 } },
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: ctx => ` 누적 수익 ${ctx.raw > 0 ? '+' : ''}${ctx.raw}%` } },
+            },
+        },
+    });
+}
+
+window.onload = loadPerf;
+</script>
+{% endblock %}

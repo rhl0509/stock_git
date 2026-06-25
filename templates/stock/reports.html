@@ -1,0 +1,172 @@
+{% extends "stock/stock_layout.html" %}
+{% block title %}시장 보고서 — GAGYE{% endblock %}
+{% block page_name %}시장 보고서{% endblock %}
+
+{% block content %}
+<style>
+.rpt-tabs { display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap; }
+.rpt-tab {
+    padding:6px 18px; border-radius:20px; font-size:0.82rem; font-weight:600;
+    border:1px solid var(--line-1); background:var(--bg-2); color:var(--fg-2);
+    cursor:pointer; transition:all .15s;
+}
+.rpt-tab.active, .rpt-tab:hover {
+    background:var(--lime); color:#111; border-color:var(--lime);
+}
+.rpt-section { display:none; }
+.rpt-section.active { display:block; }
+
+.rpt-card {
+    background:var(--bg-2); border:1px solid var(--line-1);
+    border-radius:12px; padding:18px 20px; margin-bottom:12px;
+    box-shadow:var(--card-shadow); cursor:pointer;
+    transition:transform .1s, box-shadow .1s;
+}
+.rpt-card:hover { transform:translateY(-2px); box-shadow:0 4px 16px rgba(0,0,0,.12); }
+.rpt-card-header { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.rpt-badge {
+    font-size:0.68rem; font-weight:700; padding:3px 8px; border-radius:10px;
+    font-family:var(--font-mono);
+}
+.badge-daily   { background:#dbeafe; color:#1d4ed8; }
+.badge-weekly  { background:#d1fae5; color:#065f46; }
+.badge-monthly { background:#ede9fe; color:#5b21b6; }
+.rpt-title { font-size:0.95rem; font-weight:600; color:var(--fg-1); }
+.rpt-date  { font-size:0.75rem; color:var(--fg-3); font-family:var(--font-mono); }
+.rpt-summary {
+    font-size:0.82rem; color:var(--fg-2); line-height:1.55;
+    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
+    white-space:pre-line;
+}
+.rpt-empty { text-align:center; color:var(--fg-3); padding:40px; font-size:0.9rem; }
+
+.gen-bar {
+    display:flex; gap:8px; align-items:center; margin-bottom:20px; flex-wrap:wrap;
+}
+.gen-btn {
+    padding:7px 16px; border-radius:8px; font-size:0.83rem; font-weight:600;
+    border:none; cursor:pointer; transition:opacity .15s;
+}
+.gen-btn:hover { opacity:.85; }
+.gen-daily   { background:#dbeafe; color:#1d4ed8; }
+.gen-weekly  { background:#d1fae5; color:#065f46; }
+.gen-monthly { background:#ede9fe; color:#5b21b6; }
+.gen-status  { font-size:0.82rem; color:var(--fg-3); padding:4px 0; }
+</style>
+
+<div class="gen-bar">
+    <button class="gen-btn gen-daily"   onclick="generate('daily')">+ 일간 생성</button>
+    <button class="gen-btn gen-weekly"  onclick="generate('weekly')">+ 주간 생성</button>
+    <button class="gen-btn gen-monthly" onclick="generate('monthly')">+ 월간 생성</button>
+    <span class="gen-status" id="genStatus"></span>
+</div>
+
+<div class="rpt-tabs">
+    <button class="rpt-tab active" onclick="switchTab('all', this)">전체</button>
+    <button class="rpt-tab" onclick="switchTab('daily', this)">일간</button>
+    <button class="rpt-tab" onclick="switchTab('weekly', this)">주간</button>
+    <button class="rpt-tab" onclick="switchTab('monthly', this)">월간</button>
+</div>
+
+<!-- 전체 탭 -->
+<div class="rpt-section active" id="tab-all">
+{% set all_reports = (daily + weekly + monthly) | sort(attribute='report_date', reverse=True) %}
+{% if all_reports %}
+    {% for r in all_reports[:20] %}
+    <div class="rpt-card" onclick="location.href='/reports/{{ r.id }}'">
+        <div class="rpt-card-header">
+            <span class="rpt-badge badge-{{ r.report_type }}">
+                {{ {'daily':'일간','weekly':'주간','monthly':'월간'}[r.report_type] }}
+            </span>
+            <span class="rpt-title">{{ r.title }}</span>
+        </div>
+        <div class="rpt-date">{{ r.report_date }}</div>
+        {% if r.summary %}
+        <div class="rpt-summary mt-2">{{ r.summary | truncate(200) }}</div>
+        {% endif %}
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="rpt-empty">보고서가 없습니다.<br>위 버튼으로 첫 보고서를 생성해보세요.</div>
+{% endif %}
+</div>
+
+<!-- 일간 탭 -->
+<div class="rpt-section" id="tab-daily">
+{% if daily %}
+    {% for r in daily %}
+    <div class="rpt-card" onclick="location.href='/reports/{{ r.id }}'">
+        <div class="rpt-card-header">
+            <span class="rpt-badge badge-daily">일간</span>
+            <span class="rpt-title">{{ r.title }}</span>
+        </div>
+        <div class="rpt-date">{{ r.report_date }}</div>
+        {% if r.summary %}<div class="rpt-summary mt-2">{{ r.summary | truncate(200) }}</div>{% endif %}
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="rpt-empty">일간 보고서가 없습니다.</div>
+{% endif %}
+</div>
+
+<!-- 주간 탭 -->
+<div class="rpt-section" id="tab-weekly">
+{% if weekly %}
+    {% for r in weekly %}
+    <div class="rpt-card" onclick="location.href='/reports/{{ r.id }}'">
+        <div class="rpt-card-header">
+            <span class="rpt-badge badge-weekly">주간</span>
+            <span class="rpt-title">{{ r.title }}</span>
+        </div>
+        <div class="rpt-date">{{ r.report_date }}</div>
+        {% if r.summary %}<div class="rpt-summary mt-2">{{ r.summary | truncate(200) }}</div>{% endif %}
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="rpt-empty">주간 보고서가 없습니다.</div>
+{% endif %}
+</div>
+
+<!-- 월간 탭 -->
+<div class="rpt-section" id="tab-monthly">
+{% if monthly %}
+    {% for r in monthly %}
+    <div class="rpt-card" onclick="location.href='/reports/{{ r.id }}'">
+        <div class="rpt-card-header">
+            <span class="rpt-badge badge-monthly">월간</span>
+            <span class="rpt-title">{{ r.title }}</span>
+        </div>
+        <div class="rpt-date">{{ r.report_date }}</div>
+        {% if r.summary %}<div class="rpt-summary mt-2">{{ r.summary | truncate(200) }}</div>{% endif %}
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="rpt-empty">월간 보고서가 없습니다.</div>
+{% endif %}
+</div>
+
+<script>
+function switchTab(name, btn) {
+    document.querySelectorAll('.rpt-section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.rpt-tab').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    btn.classList.add('active');
+}
+
+async function generate(type) {
+    const st = document.getElementById('genStatus');
+    st.textContent = `${type} 보고서 생성 요청 중...`;
+    try {
+        const res = await fetch(`/reports/generate?report_type=${type}`, { method:'POST' });
+        const data = await res.json();
+        if (data.ok) {
+            st.textContent = `✅ ${data.message} (완료 후 새로고침하세요)`;
+        } else {
+            st.textContent = `❌ 오류: ${data.detail || '알 수 없는 오류'}`;
+        }
+    } catch(e) {
+        st.textContent = `❌ 요청 실패: ${e.message}`;
+    }
+}
+</script>
+{% endblock %}

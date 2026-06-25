@@ -1,0 +1,306 @@
+{% extends "stock/stock_layout.html" %}
+{% block title %}가격 알림 — GAGYE{% endblock %}
+{% block page_name %}가격 알림{% endblock %}
+
+{% block content %}
+<style>
+    .pa-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:10px; }
+    .pa-title { font-size:1rem; font-weight:700; color:var(--fg-1); display:flex; align-items:center; gap:8px; }
+    .pa-sub { font-size:0.75rem; font-weight:400; color:var(--fg-3); }
+    .run-btn {
+        display:inline-flex; align-items:center; gap:6px;
+        background:var(--bg-3); border:1px solid var(--line-2); border-radius:8px;
+        padding:7px 16px; font-size:0.8rem; font-weight:600; color:var(--fg-2);
+        cursor:pointer; transition:all .15s;
+    }
+    .run-btn:hover { background:var(--line-2); }
+
+    .layout { display:grid; grid-template-columns:340px 1fr; gap:16px; align-items:start; }
+    @media(max-width:860px) { .layout { grid-template-columns:1fr; } }
+
+    .card { background:var(--bg-2); border:1px solid var(--line-1); border-radius:12px; padding:16px; box-shadow:var(--card-shadow); }
+    .card-title { font-size:0.8rem; font-weight:700; color:var(--fg-2); text-transform:uppercase; letter-spacing:.04em; margin-bottom:14px; display:flex; align-items:center; gap:6px; }
+
+    /* 추가 폼 */
+    .form-row { display:flex; gap:6px; margin-bottom:8px; }
+    .fi {
+        flex:1; min-width:0; border:1px solid var(--line-2); border-radius:8px;
+        padding:7px 10px; font-size:0.82rem; outline:none;
+        background:var(--bg-3); color:var(--fg-1); transition:border-color .15s;
+    }
+    .fi:focus { border-color:#0ea5e9; }
+    .fi::placeholder { color:var(--fg-3); }
+    .fi-sm { flex:0 0 100px; }
+    .add-btn {
+        background:#0ea5e9; border:none; border-radius:8px;
+        padding:7px 14px; font-size:0.82rem; font-weight:600; color:#fff; cursor:pointer;
+    }
+    .add-btn:hover { background:#0284c7; }
+    .add-btn:disabled { background:#94a3b8; cursor:not-allowed; }
+
+    /* 검색 자동완성 */
+    .search-wrap { position:relative; margin-bottom:8px; }
+    .search-row { display:flex; gap:6px; }
+    .autocomplete { position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:200;
+        background:var(--bg-2); border:1px solid var(--line-2); border-radius:8px;
+        box-shadow:var(--menu-shadow); max-height:180px; overflow-y:auto; display:none; }
+    .ac-item { padding:8px 12px; cursor:pointer; font-size:0.82rem; border-bottom:1px solid var(--line-1);
+        color:var(--fg-1); display:flex; align-items:center; gap:8px; transition:background .1s; }
+    .ac-item:last-child { border-bottom:none; }
+    .ac-item:hover { background:var(--bg-3); }
+    .ac-code { font-family:var(--font-mono); font-size:0.72rem; color:var(--fg-3); }
+    .ac-market { font-size:0.68rem; color:var(--accent); margin-left:auto; }
+    .sel-preview { display:none; align-items:center; gap:8px; background:rgba(14,165,233,.08);
+        border:1px solid rgba(14,165,233,.25); border-radius:8px; padding:7px 12px; margin-bottom:8px; }
+    .sel-preview.show { display:flex; }
+    .sel-name { font-size:0.85rem; font-weight:600; color:var(--fg-1); }
+    .sel-code { font-family:var(--font-mono); font-size:0.75rem; color:#0ea5e9; margin-left:4px; }
+    .sel-clr { background:none; border:none; cursor:pointer; color:var(--fg-3); margin-left:auto; }
+    .sel-clr:hover { color:#ef4444; }
+
+    /* 알림 목록 */
+    .alert-list { margin-top:6px; }
+    .alert-item {
+        border:1px solid var(--line-1); border-radius:10px; padding:12px 14px;
+        margin-bottom:8px; background:var(--bg-2); transition:opacity .15s;
+    }
+    .alert-item.inactive { opacity:.45; }
+    .alert-top { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+    .a-code { font-family:var(--font-mono); font-size:0.72rem; font-weight:700;
+        background:var(--bg-3); border:1px solid var(--line-2); border-radius:6px;
+        padding:2px 7px; color:var(--fg-2); }
+    .a-name { font-size:0.88rem; font-weight:600; color:var(--fg-1); }
+    .a-toggle { margin-left:auto; cursor:pointer; color:var(--fg-3); font-size:0.75rem; background:none; border:1px solid var(--line-2); border-radius:6px; padding:2px 8px; }
+    .a-toggle:hover { border-color:var(--fg-3); }
+    .a-del { cursor:pointer; color:var(--fg-3); background:none; border:none; padding:2px 6px; }
+    .a-del:hover { color:#ef4444; }
+    .a-prices { display:flex; gap:10px; flex-wrap:wrap; }
+    .a-price-pill {
+        font-size:0.75rem; font-weight:600; padding:3px 10px; border-radius:20px;
+        display:flex; align-items:center; gap:5px;
+    }
+    .a-target { background:rgba(52,211,153,.12); color:#34d399; border:1px solid rgba(52,211,153,.25); }
+    .a-stop   { background:rgba(239,68,68,.1); color:#f87171; border:1px solid rgba(239,68,68,.2); }
+    .a-note   { font-size:0.72rem; color:var(--fg-3); margin-top:4px; }
+    .list-empty { text-align:center; padding:32px; color:var(--fg-3); font-size:0.82rem; }
+
+    /* 이력 */
+    .log-item { display:flex; align-items:center; gap:10px; padding:9px 10px;
+        border-bottom:1px solid var(--line-1); }
+    .log-item:last-child { border-bottom:none; }
+    .log-badge { font-size:0.72rem; font-weight:700; padding:3px 9px; border-radius:10px; white-space:nowrap; }
+    .log-target { background:rgba(52,211,153,.12); color:#34d399; border:1px solid rgba(52,211,153,.25); }
+    .log-stop   { background:rgba(239,68,68,.1); color:#f87171; border:1px solid rgba(239,68,68,.2); }
+    .log-body { flex:1; min-width:0; }
+    .log-name { font-size:0.83rem; font-weight:600; color:var(--fg-1); }
+    .log-meta { font-size:0.72rem; color:var(--fg-3); margin-top:2px; }
+    .log-empty { text-align:center; padding:32px; color:var(--fg-3); font-size:0.82rem; }
+    .spin { display:inline-block; width:16px; height:16px; border:2px solid var(--line-2); border-top-color:#0ea5e9; border-radius:50%; animation:spin .9s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+
+<div style="padding:20px 0 60px;">
+    <div class="pa-header">
+        <div class="pa-title">
+            <i class="bi bi-bell-fill" style="color:#f59e0b;"></i>
+            가격 알림
+            <span class="pa-sub">평일 09:00–15:30, 10분마다 자동 체크</span>
+        </div>
+        <button class="run-btn" onclick="runNow(this)">
+            <i class="bi bi-arrow-clockwise" id="runIcon"></i> 지금 체크
+        </button>
+    </div>
+
+    <div class="layout">
+        <!-- 왼쪽: 추가 폼 + 목록 -->
+        <div class="card">
+            <div class="card-title"><i class="bi bi-plus-circle-fill" style="color:#0ea5e9;"></i>알림 추가</div>
+
+            <div class="search-wrap">
+                <div class="search-row">
+                    <input class="fi" id="searchInput" type="text" placeholder="종목명 또는 코드 검색" autocomplete="off"
+                           oninput="onSearch()" onkeydown="onSearchKey(event)">
+                    <button class="add-btn" onclick="triggerSearch()" style="padding:7px 12px;"><i class="bi bi-search"></i></button>
+                </div>
+                <div class="autocomplete" id="acList"></div>
+            </div>
+            <div class="sel-preview" id="selPreview">
+                <div><span class="sel-name" id="selName"></span><span class="sel-code" id="selCode"></span></div>
+                <button class="sel-clr" onclick="clearSel()"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="form-row">
+                <input class="fi fi-sm" id="targetPrice" type="number" placeholder="목표가" min="0">
+                <input class="fi fi-sm" id="stopPrice"   type="number" placeholder="손절가" min="0">
+            </div>
+            <div class="form-row" style="margin-bottom:10px;">
+                <input class="fi" id="noteInput" type="text" placeholder="메모 (선택)" maxlength="100">
+            </div>
+            <button class="add-btn" id="addBtn" style="width:100%;" onclick="addAlert()" disabled>
+                <i class="bi bi-plus-lg"></i> 알림 등록
+            </button>
+
+            <div style="margin-top:16px;">
+                <div class="card-title" style="margin-bottom:10px;"><i class="bi bi-list-ul"></i>등록된 알림</div>
+                <div class="alert-list" id="alertList"><div class="list-empty"><div class="spin"></div></div></div>
+            </div>
+        </div>
+
+        <!-- 오른쪽: 발송 이력 -->
+        <div class="card">
+            <div class="card-title"><i class="bi bi-clock-history"></i>발송 이력</div>
+            <div id="logList"><div class="log-empty"><div class="spin"></div></div></div>
+        </div>
+    </div>
+</div>
+
+<script>
+let _selCode = '', _selName = '';
+let _acTimer = null;
+let _alerts  = [];
+
+// ── 자동완성 ──────────────────────────────────────────────────────────────
+function onSearch() {
+    clearTimeout(_acTimer);
+    _acTimer = setTimeout(fetchAc, 200);
+    clearSel();
+}
+function onSearchKey(e) {
+    const ac = document.getElementById('acList');
+    const items = ac.querySelectorAll('.ac-item');
+    const hover = ac.querySelector('.ac-item.hover');
+    if (e.key === 'ArrowDown') { e.preventDefault(); const n = hover ? hover.nextElementSibling : items[0]; if(hover) hover.classList.remove('hover'); if(n) n.classList.add('hover'); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); const p = hover ? hover.previousElementSibling : items[items.length-1]; if(hover) hover.classList.remove('hover'); if(p) p.classList.add('hover'); }
+    else if (e.key === 'Enter') { if(hover) hover.click(); else triggerSearch(); }
+    else if (e.key === 'Escape') hideAc();
+}
+async function fetchAc() {
+    const q = document.getElementById('searchInput').value.trim();
+    if (!q) { hideAc(); return; }
+    try {
+        const res  = await fetch('/search-stock-kr?q=' + encodeURIComponent(q));
+        const list = await res.json();
+        const ac   = document.getElementById('acList');
+        if (!list.length) { hideAc(); return; }
+        ac.innerHTML = list.map(s => `<div class="ac-item" onclick="pickStock('${esc(s.code)}','${esc(s.name)}')"><span>${esc(s.name)}</span><span class="ac-code">${s.code}</span><span class="ac-market">${s.market||''}</span></div>`).join('');
+        ac.style.display = 'block';
+    } catch(e) { hideAc(); }
+}
+async function triggerSearch() {
+    await fetchAc();
+    const ac = document.getElementById('acList');
+    if (ac.style.display === 'block') return;
+    const q = document.getElementById('searchInput').value.trim();
+    if (/^\d+$/.test(q)) {
+        const res  = await fetch('/search-stock-kr?q=' + encodeURIComponent(q));
+        const list = await res.json();
+        if (list.length === 1) pickStock(list[0].code, list[0].name);
+        else if (list.length) {
+            const ac = document.getElementById('acList');
+            ac.innerHTML = list.map(s => `<div class="ac-item" onclick="pickStock('${esc(s.code)}','${esc(s.name)}')"><span>${esc(s.name)}</span><span class="ac-code">${s.code}</span><span class="ac-market">${s.market||''}</span></div>`).join('');
+            ac.style.display = 'block';
+        }
+    }
+}
+function pickStock(code, name) {
+    _selCode = code; _selName = name;
+    document.getElementById('searchInput').value = name;
+    document.getElementById('selName').textContent = name;
+    document.getElementById('selCode').textContent = code;
+    document.getElementById('selPreview').classList.add('show');
+    document.getElementById('addBtn').disabled = false;
+    hideAc();
+}
+function clearSel() { _selCode = ''; _selName = ''; document.getElementById('selPreview').classList.remove('show'); document.getElementById('addBtn').disabled = true; }
+function hideAc() { const ac = document.getElementById('acList'); ac.style.display = 'none'; }
+document.addEventListener('click', e => { if (!e.target.closest('#searchInput') && !e.target.closest('#acList')) hideAc(); });
+
+// ── 알림 CRUD ─────────────────────────────────────────────────────────────
+async function loadAlerts() {
+    const res  = await fetch('/api/price_alerts');
+    const data = await res.json();
+    if (data.ok) { _alerts = data.alerts; renderAlerts(); }
+}
+
+function renderAlerts() {
+    const el = document.getElementById('alertList');
+    if (!_alerts.length) { el.innerHTML = '<div class="list-empty">등록된 알림이 없습니다.</div>'; return; }
+    el.innerHTML = _alerts.map(a => `
+        <div class="alert-item ${a.active ? '' : 'inactive'}" id="alert-${a.id}">
+            <div class="alert-top">
+                <span class="a-code">${a.code}</span>
+                <span class="a-name">${esc(a.name)}</span>
+                <button class="a-toggle" onclick="toggleAlert(${a.id}, ${a.active})">${a.active ? '활성' : '비활성'}</button>
+                <button class="a-del" onclick="deleteAlert(${a.id})" title="삭제"><i class="bi bi-trash3"></i></button>
+            </div>
+            <div class="a-prices">
+                ${a.target_price ? `<span class="a-price-pill a-target">🎯 목표 ${Number(a.target_price).toLocaleString()}원</span>` : ''}
+                ${a.stop_price   ? `<span class="a-price-pill a-stop">🚨 손절 ${Number(a.stop_price).toLocaleString()}원</span>` : ''}
+            </div>
+            ${a.note ? `<div class="a-note">${esc(a.note)}</div>` : ''}
+        </div>`).join('');
+}
+
+async function addAlert() {
+    if (!_selCode) return;
+    const body = {
+        code: _selCode, name: _selName,
+        target_price: parseInt(document.getElementById('targetPrice').value) || null,
+        stop_price:   parseInt(document.getElementById('stopPrice').value)   || null,
+        note:         document.getElementById('noteInput').value.trim() || null,
+    };
+    if (!body.target_price && !body.stop_price) { alert('목표가 또는 손절가 중 하나는 입력하세요'); return; }
+    const res  = await fetch('/api/price_alerts', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+    const data = await res.json();
+    if (data.ok) {
+        ['searchInput','targetPrice','stopPrice','noteInput'].forEach(id => document.getElementById(id).value = '');
+        clearSel();
+        await loadAlerts();
+    } else alert(data.error || '추가 실패');
+}
+
+async function toggleAlert(id, active) {
+    await fetch(`/api/price_alerts/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({active: active ? 0 : 1}) });
+    await loadAlerts();
+}
+async function deleteAlert(id) {
+    if (!confirm('알림을 삭제할까요?')) return;
+    await fetch(`/api/price_alerts/${id}`, { method:'DELETE' });
+    await loadAlerts();
+}
+
+// ── 이력 ─────────────────────────────────────────────────────────────────
+async function loadLog() {
+    const res  = await fetch('/api/price_alerts/log');
+    const data = await res.json();
+    const el   = document.getElementById('logList');
+    if (!data.ok || !data.log.length) { el.innerHTML = '<div class="log-empty">발송 이력이 없습니다.</div>'; return; }
+    el.innerHTML = data.log.map(l => `
+        <div class="log-item">
+            <span class="log-badge ${l.kind === 'target' ? 'log-target' : 'log-stop'}">${l.kind === 'target' ? '🎯 목표' : '🚨 손절'}</span>
+            <div class="log-body">
+                <div class="log-name">${esc(l.name||l.code)} (${l.code})</div>
+                <div class="log-meta">현재가 ${Number(l.price).toLocaleString()}원 · ${l.sent_at}</div>
+            </div>
+        </div>`).join('');
+}
+
+async function runNow(btn) {
+    const icon = document.getElementById('runIcon');
+    btn.disabled = true; icon.className = 'spin';
+    try {
+        const res  = await fetch('/api/price_alerts/run', {method:'POST'});
+        const data = await res.json();
+        if (data.ok) {
+            await loadLog();
+            btn.innerHTML = `<i class="bi bi-check-lg"></i> 완료 (${data.sent}건 발송)`;
+            setTimeout(() => { btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> 지금 체크'; }, 3000);
+        } else alert('오류: ' + data.error);
+    } catch(e) { alert('오류: ' + e.message); }
+    finally { btn.disabled = false; icon.className = 'bi bi-arrow-clockwise'; }
+}
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+window.onload = function() { loadAlerts(); loadLog(); };
+</script>
+{% endblock %}

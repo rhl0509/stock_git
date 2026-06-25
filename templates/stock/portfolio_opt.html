@@ -1,0 +1,354 @@
+{% extends "stock/stock_layout.html" %}
+{% block title %}포트폴리오 최적화{% endblock %}
+{% block page_name %}포트폴리오 최적화{% endblock %}
+
+{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+.panel {
+    background: var(--bg-2); border: 1px solid var(--line-1);
+    border-radius: var(--r-3); padding: 20px 22px; margin-bottom: 14px;
+}
+.panel-title {
+    font-size: 0.72rem; font-weight: 700; color: var(--fg-3);
+    text-transform: uppercase; letter-spacing: .08em;
+    font-family: var(--font-mono); margin-bottom: 16px;
+}
+.opt-layout {
+    display: grid; grid-template-columns: 320px 1fr; gap: 14px;
+}
+@media(max-width:768px){ .opt-layout { grid-template-columns: 1fr; } }
+
+/* 종목 선택 */
+.search-input {
+    width: 100%; box-sizing: border-box;
+    background: var(--bg-3); border: 1px solid var(--line-1);
+    border-radius: var(--r-2); padding: 7px 10px;
+    color: var(--fg-1); font-size: 0.82rem; margin-bottom: 8px;
+}
+.search-input:focus { outline: none; border-color: var(--accent); }
+.candidate-list {
+    height: 260px; overflow-y: auto;
+    border: 1px solid var(--line-1); border-radius: var(--r-2);
+    background: var(--bg-3);
+}
+.candidate-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; cursor: pointer; font-size: 0.78rem;
+    border-bottom: 1px solid var(--line-1);
+}
+.candidate-item:last-child { border-bottom: none; }
+.candidate-item:hover { background: var(--bg-2); }
+.candidate-item input[type="checkbox"] { width: 14px; height: 14px; flex-shrink: 0; }
+.cand-name { flex: 1; color: var(--fg-2); }
+.cand-code { font-family: var(--font-mono); font-size: 0.68rem; color: var(--fg-3); }
+.cand-src  { font-size: 0.62rem; padding: 1px 5px; border-radius: 8px; }
+.src-추천  { background: rgba(var(--accent-rgb),.15); color: var(--accent); }
+.src-수집  { background: var(--bg-2); color: var(--fg-3); }
+
+/* 제어 */
+.ctrl-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 10px 0 0; }
+.opt-input {
+    background: var(--bg-3); border: 1px solid var(--line-1);
+    border-radius: var(--r-2); padding: 6px 9px;
+    color: var(--fg-1); font-family: var(--font-mono); font-size: 0.8rem; width: 80px;
+}
+.opt-input:focus { outline: none; border-color: var(--accent); }
+.ctrl-label { font-size: 0.72rem; color: var(--fg-3); }
+.run-btn {
+    padding: 8px 22px; background: var(--accent); color: #fff;
+    border: none; border-radius: var(--r-2); cursor: pointer;
+    font-size: 0.82rem; font-weight: 600;
+}
+.run-btn:disabled { opacity: .5; cursor: not-allowed; }
+#selCount { font-size: 0.72rem; color: var(--fg-3); }
+
+/* 결과 */
+.result-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px;
+    margin-bottom: 16px;
+}
+.r-card {
+    background: var(--bg-3); border-radius: var(--r-2); padding: 12px 14px; text-align: center;
+}
+.r-label { font-size: 0.63rem; color: var(--fg-3); text-transform: uppercase; letter-spacing: .06em; }
+.r-val   { font-size: 1.2rem; font-weight: 700; color: var(--fg-1); margin-top: 4px; font-family: var(--font-mono); }
+.r-val.green { color: #4ade80; }
+.r-val.red   { color: #f87171; }
+.r-val.amber { color: #fbbf24; }
+
+/* 비중 테이블 */
+table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+thead th {
+    text-align: left; padding: 6px 10px;
+    font-size: 0.65rem; font-weight: 700; color: var(--fg-3);
+    text-transform: uppercase; border-bottom: 1px solid var(--line-1);
+}
+tbody td { padding: 6px 10px; border-bottom: 1px solid var(--line-1); color: var(--fg-2); }
+tbody tr:last-child td { border-bottom: none; }
+.weight-bar-wrap { width: 120px; background: var(--bg-3); border-radius: 3px; height: 8px; overflow: hidden; }
+.weight-bar { height: 8px; background: var(--accent); border-radius: 3px; }
+
+#chartWrap { position: relative; height: 240px; margin-bottom: 14px; }
+#placeholder { color: var(--fg-3); font-size: 0.8rem; text-align: center; padding: 40px 0; }
+
+.h-row {
+    padding: 8px 10px; border-radius: var(--r-2); cursor: pointer;
+    border: 1px solid var(--line-1); margin-bottom: 6px;
+    transition: background 0.15s;
+}
+.h-row:hover { background: var(--lime-soft); border-color: var(--lime-border); }
+</style>
+
+<div class="opt-layout">
+
+  <!-- 왼쪽: 종목 선택 -->
+  <div>
+    <div class="panel" style="height: fit-content;">
+      <div class="panel-title">종목 선택</div>
+      <input class="search-input" id="searchInput" placeholder="종목명 또는 코드 검색…" oninput="filterList()">
+      <div class="candidate-list" id="candList">
+        <div style="padding:20px; text-align:center; color:var(--fg-3)">로딩 중…</div>
+      </div>
+      <div class="ctrl-row">
+        <span id="selCount">0개 선택</span>
+        <button style="margin-left:auto; font-size:0.72rem; padding:4px 10px; background:var(--bg-3); border:1px solid var(--line-1); border-radius:var(--r-2); color:var(--fg-3); cursor:pointer;" onclick="clearAll()">전체 해제</button>
+      </div>
+
+      <div class="ctrl-row" style="margin-top:14px; flex-direction:column; align-items:flex-start; gap:8px;">
+        <div style="display:flex; gap:8px; align-items:center;">
+          <span class="ctrl-label">종목당 최대 비중</span>
+          <input class="opt-input" type="number" id="maxWeight" value="0.40" min="0.05" max="1" step="0.05">
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <span class="ctrl-label">수익률 기간(일)</span>
+          <input class="opt-input" type="number" id="lookback" value="252" min="60" max="1260" step="21">
+        </div>
+        <button class="run-btn" id="runBtn" onclick="runOpt()" style="width:100%">최적화 실행</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 오른쪽: 결과 -->
+  <div>
+    <div class="panel">
+      <div class="panel-title">최적 포트폴리오 (Sharpe 최대화)</div>
+      <div id="resultArea">
+        <div id="placeholder">종목을 2개 이상 선택하고 최적화를 실행하세요.</div>
+      </div>
+    </div>
+
+    <div class="panel" id="frontierPanel" style="display:none;">
+      <div class="panel-title">효율적 프론티어</div>
+      <div id="chartWrap"><canvas id="frontierChart"></canvas></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">최적화 이력 <small style="font-weight:400;text-transform:none;letter-spacing:0;">(최근 20회 · 클릭 시 복원)</small></div>
+      <div id="historyWrap"><div style="color:var(--fg-3);font-size:0.78rem;">로딩 중…</div></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let allCandidates = [];
+let selected = new Set();
+let frontierChart = null;
+
+async function loadCandidates() {
+  const r = await fetch('/api/portfolio_opt/candidates');
+  allCandidates = await r.json();
+  // 추천 종목 기본 선택
+  for (const c of allCandidates) {
+    if (c.source === '추천') selected.add(c.code);
+  }
+  renderList(allCandidates);
+  updateSelCount();
+}
+
+function filterList() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  const filtered = q ? allCandidates.filter(c =>
+    c.name.toLowerCase().includes(q) || c.code.includes(q)
+  ) : allCandidates;
+  renderList(filtered);
+}
+
+function renderList(items) {
+  const el = document.getElementById('candList');
+  if (!items.length) { el.innerHTML = '<div style="padding:16px;text-align:center;color:var(--fg-3)">없음</div>'; return; }
+  el.innerHTML = items.map(c => `
+    <div class="candidate-item" onclick="toggleCode('${c.code}', this)">
+      <input type="checkbox" ${selected.has(c.code) ? 'checked' : ''} onclick="event.stopPropagation(); toggleCode('${c.code}', this.closest('.candidate-item'))">
+      <span class="cand-name">${c.name}</span>
+      <span class="cand-code">${c.code}</span>
+      <span class="cand-src src-${c.source}">${c.source}</span>
+    </div>
+  `).join('');
+}
+
+function toggleCode(code, row) {
+  const cb = row.querySelector('input[type="checkbox"]');
+  if (selected.has(code)) { selected.delete(code); cb.checked = false; }
+  else                     { selected.add(code);    cb.checked = true;  }
+  updateSelCount();
+}
+
+function clearAll() {
+  selected.clear();
+  renderList(allCandidates.filter(c => {
+    const q = document.getElementById('searchInput').value.toLowerCase();
+    return !q || c.name.toLowerCase().includes(q) || c.code.includes(q);
+  }));
+  updateSelCount();
+}
+
+function updateSelCount() {
+  document.getElementById('selCount').textContent = `${selected.size}개 선택`;
+}
+
+async function runOpt() {
+  if (selected.size < 2) { alert('종목을 2개 이상 선택하세요.'); return; }
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  btn.textContent = '계산 중…';
+
+  try {
+    const r = await fetch('/api/portfolio_opt/optimize', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        codes: [...selected],
+        max_weight: parseFloat(document.getElementById('maxWeight').value),
+        lookback_days: parseInt(document.getElementById('lookback').value),
+      }),
+    });
+    const d = await r.json();
+    if (!d.ok) { alert('오류: ' + d.error); return; }
+    renderResult(d);
+  } catch(e) {
+    alert('오류: ' + e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '최적화 실행';
+  }
+}
+
+function renderResult(d) {
+  const res = d.result;
+  const names = d.names;
+  const ph = document.getElementById('placeholder');
+  if (ph) ph.style.display = 'none';
+
+  // 지표 카드
+  const sharpeColor = res.sharpe >= 1 ? 'green' : res.sharpe >= 0.5 ? 'amber' : 'red';
+  const retColor    = res.annual_ret >= 0 ? 'green' : 'red';
+  let html = `
+    <div class="result-grid">
+      <div class="r-card"><div class="r-label">예상 연수익률</div>
+        <div class="r-val ${retColor}">${res.annual_ret >= 0 ? '+' : ''}${res.annual_ret}%</div></div>
+      <div class="r-card"><div class="r-label">연 변동성</div>
+        <div class="r-val">${res.annual_vol}%</div></div>
+      <div class="r-card"><div class="r-label">Sharpe 비율</div>
+        <div class="r-val ${sharpeColor}">${res.sharpe}</div></div>
+      <div class="r-card"><div class="r-label">수익률 기간</div>
+        <div class="r-val">${d.n_days}일</div></div>
+    </div>`;
+
+  if (d.missing && d.missing.length) {
+    html += `<div style="font-size:0.72rem;color:var(--fg-3);margin-bottom:10px;">⚠ 데이터 없음: ${d.missing.join(', ')}</div>`;
+  }
+
+  // 비중 테이블
+  const sorted = Object.entries(res.weights).sort((a, b) => b[1] - a[1]);
+  html += `<table><thead><tr><th>종목</th><th>코드</th><th>비중</th><th style="width:140px"></th></tr></thead><tbody>`;
+  for (const [code, w] of sorted) {
+    if (w < 0.001) continue;
+    const pct = (w * 100).toFixed(1);
+    html += `<tr>
+      <td>${names[code] ?? code}</td>
+      <td style="font-family:var(--font-mono)">${code}</td>
+      <td style="font-family:var(--font-mono)">${pct}%</td>
+      <td><div class="weight-bar-wrap"><div class="weight-bar" style="width:${Math.min(w/0.4*100,100)}%"></div></div></td>
+    </tr>`;
+  }
+  html += `</tbody></table>`;
+
+  document.getElementById('resultArea').innerHTML = html;
+
+  // 프론티어 차트
+  if (d.frontier && d.frontier.length) {
+    document.getElementById('frontierPanel').style.display = 'block';
+    if (frontierChart) frontierChart.destroy();
+    const ctx = document.getElementById('frontierChart').getContext('2d');
+    frontierChart = new Chart(ctx, {
+      type: 'scatter',
+      data: {
+        datasets: [
+          {
+            label: '효율적 프론티어',
+            data: d.frontier.map(p => ({x: p.vol, y: p.ret})),
+            borderColor: 'var(--accent)', backgroundColor: 'rgba(var(--accent-rgb),.15)',
+            showLine: true, pointRadius: 3,
+          },
+          {
+            label: '최적 포트폴리오',
+            data: [{x: res.annual_vol, y: res.annual_ret}],
+            pointRadius: 8, pointBackgroundColor: '#fbbf24',
+            pointBorderColor: '#fff', pointBorderWidth: 2,
+          }
+        ]
+      },
+      options: {
+        plugins: { legend: { labels: { color: 'var(--fg-2)', font: {size: 11} } } },
+        scales: {
+          x: { title: { display: true, text: '연 변동성 (%)', color: 'var(--fg-3)' },
+               ticks: { color: 'var(--fg-3)' }, grid: { color: 'var(--line-1)' } },
+          y: { title: { display: true, text: '연 수익률 (%)', color: 'var(--fg-3)' },
+               ticks: { color: 'var(--fg-3)' }, grid: { color: 'var(--line-1)' } },
+        }
+      }
+    });
+  }
+}
+
+async function loadHistory() {
+  const r = await fetch('/api/portfolio_opt/history');
+  const list = await r.json();
+  const wrap = document.getElementById('historyWrap');
+  if (!list.length) { wrap.innerHTML = '<div style="color:var(--fg-3);font-size:0.78rem;padding:8px 0;">아직 저장된 이력 없음</div>'; return; }
+  wrap.innerHTML = list.map((h, i) => {
+    const sc = h.sharpe >= 1 ? 'green' : h.sharpe >= 0.5 ? 'amber' : 'red';
+    const rc = h.annual_ret >= 0 ? 'green' : 'red';
+    const tickers = h.codes.map(c => h.names?.[c] || c).join(', ');
+    return `<div class="h-row" onclick="restoreHistory(${i})">
+      <div style="font-size:0.7rem;color:var(--fg-3);font-family:var(--font-mono);">${h.saved_at}</div>
+      <div style="font-size:0.75rem;color:var(--fg-2);margin:3px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${tickers}</div>
+      <div style="display:flex;gap:8px;font-family:var(--font-mono);font-size:0.72rem;">
+        <span class="r-val ${rc}" style="font-size:0.78rem;">${h.annual_ret >= 0 ? '+' : ''}${h.annual_ret}%</span>
+        <span style="color:var(--fg-3);">σ ${h.annual_vol}%</span>
+        <span class="r-val ${sc}" style="font-size:0.78rem;">SR ${h.sharpe}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  window._optHistory = list;
+}
+
+function restoreHistory(idx) {
+  const h = window._optHistory?.[idx];
+  if (!h) return;
+  // 해당 종목들 선택 상태로 복원
+  selected.clear();
+  h.codes.forEach(c => selected.add(c));
+  document.getElementById('maxWeight').value = h.max_weight;
+  document.getElementById('lookback').value  = h.lookback;
+  updateSelCount();
+  renderList(allCandidates);
+}
+
+loadCandidates();
+loadHistory();
+</script>
+{% endblock %}

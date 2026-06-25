@@ -1,0 +1,30 @@
+# ── 비밀정보 ──
+.env
+*.env
+!.env.example
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ── Node ──
+node_modules/
+
+# ── 데이터/모델/캐시 (대용량·재생성 가능) ──
+cache/
+data/
+logs/
+backup/
+XGBoost_v2/data/
+XGBoost_v2/model/*.cbm
+XGBoost_v2/model/*.pkl
+XGBoost_v2/model/*.txt
+XGBoost_v2/model/xgb_*.json
+XGBoost_v2/model/lgb_*.txt
+XGBoost_v2/model/recommend_history/
+trading/model/
+
+# ── 빌드 산출물 ──
+static/spa/

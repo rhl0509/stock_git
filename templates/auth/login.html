@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>로그인 - 가계부</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            min-height: 100vh;
+            background: #f5f6f8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            color: #1f2430;
+        }
+        .wrap {
+            display: flex;
+            width: 100%;
+            max-width: 880px;
+            min-height: 500px;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+            border: 1px solid #e5e7eb;
+            background: #fff;
+        }
+        .left-panel {
+            flex: 1;
+            background: #1c1f26;
+            padding: 44px 38px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .brand-icon {
+            width: 36px; height: 36px;
+            background: #2d323c;
+            border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+            color: #fff;
+            font-weight: 700;
+            font-size: 1rem;
+        }
+        .brand-name {
+            font-weight: 700;
+            font-size: 1.05rem;
+            color: #fff;
+        }
+        .left-tagline h2 {
+            font-size: 1.55rem;
+            font-weight: 700;
+            color: #fff;
+            line-height: 1.35;
+            margin-bottom: 10px;
+        }
+        .left-tagline p {
+            color: rgba(255,255,255,0.55);
+            font-size: 0.88rem;
+            line-height: 1.7;
+        }
+        .stat-chips {
+            display: flex;
+            gap: 8px;
+        }
+        .stat-chip {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 6px;
+            padding: 9px 12px;
+            color: rgba(255,255,255,0.72);
+            font-size: 0.78rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+        }
+        .stat-chip strong {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 1.05rem;
+            font-weight: 600;
+        }
+        a.stat-chip {
+            text-decoration: none;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        a.stat-chip:hover {
+            background: rgba(255,255,255,0.1);
+            border-color: rgba(255,255,255,0.18);
+        }
+        .right-panel {
+            width: 380px;
+            background: #fff;
+            padding: 44px 36px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .form-heading {
+            font-weight: 700;
+            font-size: 1.35rem;
+            color: #1f2430;
+            margin-bottom: 4px;
+        }
+        .form-sub {
+            color: #9099a2;
+            font-size: 0.83rem;
+            margin-bottom: 28px;
+        }
+        .field-label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #3d4350;
+            margin-bottom: 5px;
+            display: block;
+        }
+        .field-wrap {
+            position: relative;
+            margin-bottom: 14px;
+        }
+        .field-wrap i {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9099a2;
+            font-size: 0.95rem;
+        }
+        .field-wrap input {
+            width: 100%;
+            padding: 10px 12px 10px 36px;
+            border: 1px solid #d7dbe0;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-family: inherit;
+            color: #1f2430;
+            outline: none;
+            transition: border-color 0.15s, box-shadow 0.15s;
+            background: #fff;
+        }
+        .field-wrap input:focus {
+            border-color: #3d4350;
+            box-shadow: 0 0 0 2px rgba(61,67,80,0.12);
+        }
+        .login-btn {
+            width: 100%;
+            padding: 11px;
+            background: #1c1f26;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: background 0.15s;
+            margin-top: 6px;
+        }
+        .login-btn:hover {
+            background: #2a2f38;
+        }
+        .divider {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 18px 0;
+            color: #c7ccd2;
+            font-size: 0.78rem;
+        }
+        .divider::before, .divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: #eaecef;
+        }
+        .register-link {
+            text-align: center;
+            font-size: 0.84rem;
+            color: #656b75;
+        }
+        .register-link a {
+            color: #1f2430;
+            font-weight: 600;
+            text-decoration: none;
+        }
+        .register-link a:hover { text-decoration: underline; }
+
+        @media (max-width: 700px) {
+            .wrap { flex-direction: column; border-radius: 10px; min-height: auto; }
+            .left-panel { display: none; }
+            .right-panel { width: 100%; padding: 32px 24px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="left-panel">
+            <div class="brand">
+                <div class="brand-icon">가</div>
+                <div class="brand-name">가계부</div>
+            </div>
+            <div class="left-tagline">
+                <h2>지출 관리,<br>가볍게 시작해 보세요.</h2>
+                <p>수입과 지출을 한곳에 기록하고<br>매달 소비 흐름을 확인할 수 있습니다.</p>
+            </div>
+            <div class="stat-chips">
+                <a href="https://github.com/rhl0509" target="_blank" class="stat-chip">
+                    <strong><i class="bi bi-github"></i></strong>GitHub
+                </a>
+                <a href="https://instagram.com" target="_blank" class="stat-chip">
+                    <strong><i class="bi bi-instagram"></i></strong>Instagram
+                </a>
+                <a href="/stock_live" class="stat-chip">
+                    <strong><i class="bi bi-graph-up-arrow"></i></strong>주식 보기
+                </a>
+            </div>
+        </div>
+        <div class="right-panel">
+            <div class="form-heading">로그인</div>
+            <div class="form-sub">아이디와 비밀번호를 입력해 주세요.</div>
+
+            <label class="field-label">아이디</label>
+            <div class="field-wrap">
+                <i class="bi bi-person"></i>
+                <input type="text" id="user_id" placeholder="아이디를 입력하세요">
+            </div>
+
+            <label class="field-label">비밀번호</label>
+            <div class="field-wrap">
+                <i class="bi bi-lock"></i>
+                <input type="password" id="password" placeholder="비밀번호를 입력하세요"
+                       onkeydown="if(event.key==='Enter') login()">
+            </div>
+
+            <button class="login-btn" onclick="login()">로그인</button>
+
+            <div class="divider">또는</div>
+            <div class="register-link">
+                계정이 없으신가요? <a href="/register">회원가입</a>
+                &nbsp;·&nbsp; <a href="/find-account">계정 찾기</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function login() {
+            const user_id = document.getElementById('user_id').value;
+            const password = document.getElementById('password').value;
+            const res = await fetch('/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id, password })
+            });
+            if (res.ok) {
+                window.location.href = '/';
+            } else {
+                alert('로그인 실패! 아이디와 비밀번호를 확인하세요.');
+            }
+        }
+    </script>
+</body>
+</html>

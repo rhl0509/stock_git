@@ -1,0 +1,333 @@
+{% extends "stock/stock_layout.html" %}
+{% block title %}백테스팅 시뮬레이터{% endblock %}
+{% block page_name %}백테스팅 시뮬레이터{% endblock %}
+
+{% block content %}
+<style>
+.panel {
+    background:#fff; border:1px solid rgba(0,0,0,0.06); border-radius:16px;
+    padding:20px 24px; margin-bottom:16px;
+    box-shadow:0 1px 3px rgba(0,0,0,0.04),0 8px 24px rgba(0,0,0,0.06);
+}
+.panel-title { font-size:0.8rem; font-weight:700; color:#6b7280; letter-spacing:1px; text-transform:uppercase; margin-bottom:14px; }
+.form-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:12px; }
+.form-group label { display:block; font-size:0.75rem; font-weight:600; color:#374151; margin-bottom:4px; }
+.form-group input, .form-group select {
+    width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:8px;
+    font-size:0.875rem; outline:none; transition:border 0.15s;
+}
+.form-group input:focus, .form-group select:focus { border-color:#8b5cf6; }
+
+.tab-row { display:flex; gap:8px; margin-bottom:16px; }
+.tab-btn {
+    padding:7px 18px; border-radius:8px; border:1px solid #d1d5db;
+    font-size:0.875rem; font-weight:600; cursor:pointer; background:#fff; color:#374151; transition:all 0.15s;
+}
+.tab-btn.active { background:#8b5cf6; color:#fff; border-color:#8b5cf6; }
+
+.run-btn {
+    width:100%; padding:12px; background:#111827; color:#fff; border:none;
+    border-radius:10px; font-size:0.95rem; font-weight:700; cursor:pointer;
+    margin-top:14px; transition:background 0.2s;
+}
+.run-btn:hover { background:#1f2937; }
+.run-btn:disabled { background:#9ca3af; cursor:not-allowed; }
+
+.metric-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+@media(max-width:768px){ .metric-grid{ grid-template-columns:repeat(2,1fr); } }
+.metric-card { background:#f9fafb; border-radius:12px; padding:14px 16px; text-align:center; }
+.metric-label { font-size:0.7rem; font-weight:600; color:#9ca3af; text-transform:uppercase; letter-spacing:0.6px; }
+.metric-value { font-size:1.4rem; font-weight:700; color:#111827; margin-top:4px; }
+.metric-value.pos { color:#10b981; }
+.metric-value.neg { color:#ef4444; }
+
+.trades-table { width:100%; border-collapse:collapse; font-size:0.82rem; }
+.trades-table th { background:#f3f4f6; padding:8px 12px; text-align:left; font-weight:600; color:#374151; }
+.trades-table td { padding:7px 12px; border-top:1px solid #f3f4f6; }
+.trades-table tr:hover td { background:#fafafa; }
+.badge {
+    display:inline-block; padding:2px 8px; border-radius:20px; font-size:0.7rem; font-weight:600;
+}
+.badge-target { background:#dcfce7; color:#16a34a; }
+.badge-stop   { background:#fee2e2; color:#dc2626; }
+.badge-timeout{ background:#e0e7ff; color:#4338ca; }
+.badge-force  { background:#fef3c7; color:#92400e; }
+
+#chart-container { position:relative; height:320px; }
+.spinner { display:none; text-align:center; padding:40px; color:#9ca3af; font-size:0.9rem; }
+.error-msg { background:#fee2e2; color:#dc2626; border-radius:10px; padding:12px 16px; display:none; }
+</style>
+
+<div class="panel">
+    <div class="panel-title">전략 설정</div>
+
+    <!-- 탭: ML / 커스텀 -->
+    <div class="tab-row">
+        <button class="tab-btn active" onclick="switchTab('ml')">ML 모델</button>
+        <button class="tab-btn" onclick="switchTab('custom')">커스텀 조건</button>
+    </div>
+
+    <!-- 공통 설정 -->
+    <div class="form-grid">
+        <div class="form-group">
+            <label>종목 코드</label>
+            <input id="code" type="text" value="005930" placeholder="예: 005930" list="code-list">
+            <datalist id="code-list">
+                {% for c in codes %}<option value="{{ c }}">{% endfor %}
+            </datalist>
+        </div>
+        <div class="form-group">
+            <label>시작일</label>
+            <input id="start" type="date" value="2023-01-01">
+        </div>
+        <div class="form-group">
+            <label>종료일</label>
+            <input id="end" type="date" value="{{ now }}">
+        </div>
+        <div class="form-group">
+            <label>보유 기간 (일)</label>
+            <input id="hold_days" type="number" value="5" min="1" max="60">
+        </div>
+    </div>
+
+    <!-- ML 전용 설정 -->
+    <div id="ml-opts" class="form-grid" style="margin-top:12px;">
+        <div class="form-group">
+            <label>라벨</label>
+            <select id="label">
+                <option value="daily">Daily (3일)</option>
+                <option value="short" selected>Short (5일)</option>
+                <option value="swing">Swing (14일)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>신뢰도 임계값</label>
+            <input id="threshold" type="number" value="0.55" min="0.5" max="0.95" step="0.01">
+        </div>
+    </div>
+
+    <!-- 커스텀 전용 설정 -->
+    <div id="custom-opts" style="display:none; margin-top:12px;">
+        <div class="form-grid" style="margin-bottom:12px;">
+            <div class="form-group">
+                <label>손절 (%)</label>
+                <input id="stop_pct" type="number" value="3" min="1" max="20" step="0.5">
+            </div>
+            <div class="form-group">
+                <label>목표 (%)</label>
+                <input id="target_pct" type="number" value="5" min="1" max="50" step="0.5">
+            </div>
+        </div>
+        <div class="panel-title" style="margin-bottom:10px;">매수 조건 (중복 선택 가능)</div>
+        <div style="display:flex; flex-wrap:wrap; gap:10px;">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                <input type="checkbox" id="c_rsi"> RSI 과매도
+                <input id="rsi_threshold" type="number" value="30" min="10" max="50" style="width:55px;padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;">
+                이하
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                <input type="checkbox" id="c_macd"> MACD 골든크로스
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                <input type="checkbox" id="c_ma"> MA5 > MA20 크로스
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                <input type="checkbox" id="c_vol"> 거래량 급증
+                <input id="volume_mult" type="number" value="2" min="1.5" max="10" step="0.5" style="width:55px;padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;">
+                배 이상
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                <input type="checkbox" id="c_bb"> 볼린저 하단 이탈
+            </label>
+        </div>
+    </div>
+
+    <button class="run-btn" id="run-btn" onclick="runBacktest()">▶ 백테스트 실행</button>
+</div>
+
+<!-- 결과 -->
+<div id="result-area" style="display:none;">
+    <div class="error-msg" id="error-msg"></div>
+
+    <!-- 지표 -->
+    <div class="panel">
+        <div class="panel-title">성과 지표</div>
+        <div class="metric-grid" id="metrics"></div>
+    </div>
+
+    <!-- 수익률 곡선 -->
+    <div class="panel">
+        <div class="panel-title">수익률 곡선</div>
+        <div id="chart-container"><canvas id="equity-chart"></canvas></div>
+    </div>
+
+    <!-- 매매 내역 -->
+    <div class="panel">
+        <div class="panel-title">매매 내역 (최근 50건)</div>
+        <div style="overflow-x:auto;">
+            <table class="trades-table">
+                <thead><tr>
+                    <th>진입일</th><th>청산일</th>
+                    <th>진입가</th><th>청산가</th>
+                    <th>수익률</th><th>청산 사유</th>
+                </tr></thead>
+                <tbody id="trades-body"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="spinner" id="spinner">⏳ 백테스트 실행 중...</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+let currentTab = 'ml';
+let equityChart = null;
+
+function switchTab(tab) {
+    currentTab = tab;
+    document.querySelectorAll('.tab-btn').forEach((b,i) =>
+        b.classList.toggle('active', (i===0 && tab==='ml') || (i===1 && tab==='custom')));
+    document.getElementById('ml-opts').style.display     = tab==='ml'     ? '' : 'none';
+    document.getElementById('custom-opts').style.display = tab==='custom' ? '' : 'none';
+}
+
+async function runBacktest() {
+    const btn = document.getElementById('run-btn');
+    btn.disabled = true;
+    document.getElementById('spinner').style.display = 'block';
+    document.getElementById('result-area').style.display = 'none';
+    document.getElementById('error-msg').style.display = 'none';
+
+    const body = {
+        code:       document.getElementById('code').value.trim(),
+        strategy:   currentTab,
+        start:      document.getElementById('start').value,
+        end:        document.getElementById('end').value,
+        hold_days:  parseInt(document.getElementById('hold_days').value),
+    };
+
+    if (currentTab === 'ml') {
+        body.label     = document.getElementById('label').value;
+        body.threshold = parseFloat(document.getElementById('threshold').value);
+    } else {
+        body.stop_pct   = parseFloat(document.getElementById('stop_pct').value);
+        body.target_pct = parseFloat(document.getElementById('target_pct').value);
+        body.conditions = {
+            rsi_buy:       document.getElementById('c_rsi').checked,
+            rsi_threshold: parseFloat(document.getElementById('rsi_threshold').value),
+            macd_cross:    document.getElementById('c_macd').checked,
+            ma_cross:      document.getElementById('c_ma').checked,
+            volume_surge:  document.getElementById('c_vol').checked,
+            volume_mult:   parseFloat(document.getElementById('volume_mult').value),
+            bb_bounce:     document.getElementById('c_bb').checked,
+        };
+    }
+
+    try {
+        const res  = await fetch('/backtest/run', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+
+        if (data.error) {
+            showError(data.error);
+        } else {
+            renderResult(data);
+        }
+    } catch(e) {
+        showError('요청 실패: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        document.getElementById('spinner').style.display = 'none';
+    }
+}
+
+function showError(msg) {
+    const el = document.getElementById('error-msg');
+    el.textContent = '⚠ ' + msg;
+    el.style.display = 'block';
+    document.getElementById('result-area').style.display = 'block';
+}
+
+function renderResult(data) {
+    document.getElementById('result-area').style.display = 'block';
+    const m = data.metrics;
+
+    // 지표 카드
+    const colorCls = v => v > 0 ? 'pos' : v < 0 ? 'neg' : '';
+    document.getElementById('metrics').innerHTML = `
+        <div class="metric-card">
+            <div class="metric-label">총 거래</div>
+            <div class="metric-value">${m.n_trades}건</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">승률</div>
+            <div class="metric-value ${m.win_rate>=50?'pos':'neg'}">${m.win_rate}%</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">평균 수익률</div>
+            <div class="metric-value ${colorCls(m.avg_return)}">${m.avg_return>0?'+':''}${m.avg_return}%</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">총 수익률</div>
+            <div class="metric-value ${colorCls(m.total_return)}">${m.total_return>0?'+':''}${m.total_return}%</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">MDD</div>
+            <div class="metric-value neg">${m.max_drawdown}%</div>
+        </div>
+    `;
+
+    // 수익률 곡선
+    const ctx = document.getElementById('equity-chart').getContext('2d');
+    if (equityChart) equityChart.destroy();
+    equityChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.dates,
+            datasets: [
+                {
+                    label: '전략 수익률 (%)',
+                    data: data.equity,
+                    borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.08)',
+                    borderWidth: 2, pointRadius: 2, fill: true, tension: 0.3,
+                },
+                {
+                    label: `Buy&Hold (${data.benchmark>0?'+':''}${data.benchmark}%)`,
+                    data: Array(data.dates.length).fill(null).map((_,i) =>
+                        100 + data.benchmark * i / (data.dates.length - 1 || 1)),
+                    borderColor: '#9ca3af', borderWidth: 1.5,
+                    borderDash: [5,4], pointRadius: 0,
+                }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'top' } },
+            scales: {
+                x: { ticks: { maxTicksLimit: 8 } },
+                y: { ticks: { callback: v => v + '%' } }
+            }
+        }
+    });
+
+    // 매매 내역
+    const badgeMap = { target:'badge-target', stop:'badge-stop', timeout:'badge-timeout', force:'badge-force' };
+    const labelMap = { target:'목표가', stop:'손절', timeout:'기간만료', force:'강제청산' };
+    document.getElementById('trades-body').innerHTML = data.trades.map(t => `
+        <tr>
+            <td>${t.entry_date}</td>
+            <td>${t.exit_date}</td>
+            <td>${t.entry_price.toLocaleString()}</td>
+            <td>${t.exit_price.toLocaleString()}</td>
+            <td style="font-weight:600;color:${t.return_pct>0?'#10b981':'#ef4444'}">
+                ${t.return_pct>0?'+':''}${t.return_pct}%
+            </td>
+            <td><span class="badge ${badgeMap[t.exit_reason]||''}">${labelMap[t.exit_reason]||t.exit_reason}</span></td>
+        </tr>
+    `).join('');
+}
+</script>
+{% endblock %}

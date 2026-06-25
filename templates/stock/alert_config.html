@@ -1,0 +1,254 @@
+{% extends "stock/stock_layout.html" %}
+{% block title %}알림 설정{% endblock %}
+{% block page_name %}알림 설정{% endblock %}
+
+{% block content %}
+<style>
+.panel {
+    background: var(--bg-2); border: 1px solid var(--line-1);
+    border-radius: var(--r-3); padding: 20px 22px; margin-bottom: 14px;
+}
+.panel-title {
+    font-size: 0.72rem; font-weight: 700; color: var(--fg-3);
+    text-transform: uppercase; letter-spacing: .08em;
+    font-family: var(--font-mono); margin-bottom: 18px;
+}
+.field-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px;
+}
+.field {
+    display: flex; flex-direction: column; gap: 5px;
+}
+.field label {
+    font-size: 0.72rem; color: var(--fg-3);
+}
+.field input[type="number"], .field input[type="text"] {
+    background: var(--bg-3); border: 1px solid var(--line-1);
+    border-radius: var(--r-2); padding: 7px 10px;
+    color: var(--fg-1); font-family: var(--font-mono); font-size: 0.85rem;
+    width: 100%; box-sizing: border-box;
+}
+.field input[type="number"]:focus, .field input[type="text"]:focus {
+    outline: none; border-color: var(--accent);
+}
+.toggle-row {
+    display: flex; align-items: center; gap: 10px; padding: 6px 0;
+    border-bottom: 1px solid var(--line-1);
+}
+.toggle-row:last-child { border-bottom: none; }
+.toggle-label { flex: 1; font-size: 0.8rem; color: var(--fg-2); }
+.toggle-desc   { font-size: 0.68rem; color: var(--fg-3); margin-top: 1px; }
+
+/* toggle switch */
+.switch { position: relative; display: inline-block; width: 38px; height: 22px; flex-shrink: 0; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider {
+    position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+    background: var(--bg-3); border: 1px solid var(--line-1); border-radius: 22px;
+    transition: .2s;
+}
+.slider:before {
+    position: absolute; content: ""; height: 16px; width: 16px; left: 2px; bottom: 2px;
+    background: var(--fg-3); border-radius: 50%; transition: .2s;
+}
+input:checked + .slider { background: var(--accent); border-color: var(--accent); }
+input:checked + .slider:before { transform: translateX(16px); background: #fff; }
+
+.save-bar {
+    display: flex; align-items: center; gap: 12px; margin-top: 6px;
+}
+.save-btn {
+    padding: 9px 28px; background: var(--accent); color: #fff;
+    border: none; border-radius: var(--r-2); cursor: pointer;
+    font-size: 0.82rem; font-weight: 600;
+}
+.save-btn:disabled { opacity: .5; cursor: not-allowed; }
+#saveMsg { font-size: 0.75rem; color: var(--fg-3); }
+</style>
+
+<form id="cfgForm" onsubmit="save(event)">
+
+<!-- 아침 브리핑 -->
+<div class="panel">
+  <div class="panel-title">아침 브리핑 (08:50)</div>
+
+  <div class="toggle-row">
+    <div><div class="toggle-label">브리핑 발송 활성화</div></div>
+    <label class="switch"><input type="checkbox" id="morning_brief.enabled"><span class="slider"></span></label>
+  </div>
+  <div class="toggle-row">
+    <div><div class="toggle-label">거시지표 포함</div><div class="toggle-desc">원/달러, S&P500, VIX, 국고채3y</div></div>
+    <label class="switch"><input type="checkbox" id="morning_brief.show_macro"><span class="slider"></span></label>
+  </div>
+  <div class="toggle-row">
+    <div><div class="toggle-label">강력추천(Triple) 표시</div><div class="toggle-desc">3개 라벨 동시 신호 종목</div></div>
+    <label class="switch"><input type="checkbox" id="morning_brief.show_triple"><span class="slider"></span></label>
+  </div>
+  <div class="toggle-row">
+    <div><div class="toggle-label">데일리(3일) 표시</div></div>
+    <label class="switch"><input type="checkbox" id="morning_brief.show_daily"><span class="slider"></span></label>
+  </div>
+  <div class="toggle-row">
+    <div><div class="toggle-label">단타(5일) 표시</div></div>
+    <label class="switch"><input type="checkbox" id="morning_brief.show_short"><span class="slider"></span></label>
+  </div>
+  <div class="toggle-row">
+    <div><div class="toggle-label">스윙(14일) 표시</div></div>
+    <label class="switch"><input type="checkbox" id="morning_brief.show_swing"><span class="slider"></span></label>
+  </div>
+
+  <div style="margin-top: 16px;">
+    <div class="field" style="max-width:200px;">
+      <label>카테고리별 최대 표시 종목 수</label>
+      <input type="number" id="morning_brief.max_picks_per_cat" min="1" max="10" step="1">
+    </div>
+  </div>
+</div>
+
+<!-- 신뢰도 임계값 -->
+<div class="panel">
+  <div class="panel-title">추천 신뢰도 임계값</div>
+  <div class="field-grid">
+    <div class="field">
+      <label>데일리 최소 신뢰도 (0.0 ~ 1.0)</label>
+      <input type="number" id="thresholds.daily_min_conf" min="0" max="1" step="0.01">
+    </div>
+    <div class="field">
+      <label>단타 최소 신뢰도 (0.0 ~ 1.0)</label>
+      <input type="number" id="thresholds.short_min_conf" min="0" max="1" step="0.01">
+    </div>
+    <div class="field">
+      <label>스윙 최소 신뢰도 (0.0 ~ 1.0)</label>
+      <input type="number" id="thresholds.swing_min_conf" min="0" max="1" step="0.01">
+    </div>
+    <div class="field">
+      <label>강력추천 최소 통합점수 (0.0 ~ 1.0)</label>
+      <input type="number" id="thresholds.triple_min_combined" min="0" max="1" step="0.01">
+    </div>
+  </div>
+</div>
+
+<!-- 에러 알림 -->
+<div class="panel">
+  <div class="panel-title">에러 알림</div>
+  <div class="toggle-row">
+    <div><div class="toggle-label">학습 오류 알림</div><div class="toggle-desc">run_monthly.bat 학습 실패 시</div></div>
+    <label class="switch"><input type="checkbox" id="errors.notify_train_error"><span class="slider"></span></label>
+  </div>
+  <div class="toggle-row">
+    <div><div class="toggle-label">추천 생성 오류 알림</div><div class="toggle-desc">daily_recommend 실패 시</div></div>
+    <label class="switch"><input type="checkbox" id="errors.notify_recommend_error"><span class="slider"></span></label>
+  </div>
+  <div class="toggle-row">
+    <div><div class="toggle-label">미세조정 오류 알림</div><div class="toggle-desc">incremental_update 실패 시</div></div>
+    <label class="switch"><input type="checkbox" id="errors.notify_incremental_error"><span class="slider"></span></label>
+  </div>
+</div>
+
+<!-- 장 마감 브리핑 -->
+<div class="panel">
+  <div class="panel-title">장 마감 브리핑 (15:35)</div>
+  <div class="toggle-row">
+    <div><div class="toggle-label">브리핑 발송 활성화</div></div>
+    <label class="switch"><input type="checkbox" id="closing_brief.enabled"><span class="slider"></span></label>
+  </div>
+  <div class="toggle-row">
+    <div><div class="toggle-label">가상매매 요약 포함</div><div class="toggle-desc">당일 HIT/STOP/OPEN 건수</div></div>
+    <label class="switch"><input type="checkbox" id="closing_brief.show_paper_summary"><span class="slider"></span></label>
+  </div>
+</div>
+
+<div class="save-bar">
+  <button type="submit" class="save-btn" id="saveBtn">저장</button>
+  <span id="saveMsg"></span>
+</div>
+
+</form>
+
+<script>
+const FIELDS = [
+  'morning_brief.enabled', 'morning_brief.show_macro', 'morning_brief.show_triple',
+  'morning_brief.show_daily', 'morning_brief.show_short', 'morning_brief.show_swing',
+  'morning_brief.max_picks_per_cat',
+  'thresholds.daily_min_conf', 'thresholds.short_min_conf',
+  'thresholds.swing_min_conf', 'thresholds.triple_min_combined',
+  'errors.notify_train_error', 'errors.notify_recommend_error', 'errors.notify_incremental_error',
+  'closing_brief.enabled', 'closing_brief.show_paper_summary',
+];
+
+function getVal(id) {
+  const el = document.getElementById(id);
+  if (!el) return undefined;
+  if (el.type === 'checkbox') return el.checked;
+  if (el.type === 'number') return parseFloat(el.value);
+  return el.value;
+}
+
+function setVal(id, val) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (el.type === 'checkbox') el.checked = !!val;
+  else el.value = val;
+}
+
+function flatToCfg(flat) {
+  const cfg = {};
+  for (const [key, val] of Object.entries(flat)) {
+    const [section, field] = key.split('.');
+    if (!cfg[section]) cfg[section] = {};
+    cfg[section][field] = val;
+  }
+  return cfg;
+}
+
+function cfgToFlat(cfg) {
+  const flat = {};
+  for (const [section, vals] of Object.entries(cfg)) {
+    if (typeof vals === 'object' && vals !== null) {
+      for (const [field, val] of Object.entries(vals)) {
+        flat[`${section}.${field}`] = val;
+      }
+    }
+  }
+  return flat;
+}
+
+async function load() {
+  const r = await fetch('/api/alert_config');
+  const cfg = await r.json();
+  const flat = cfgToFlat(cfg);
+  for (const id of FIELDS) {
+    if (flat[id] !== undefined) setVal(id, flat[id]);
+  }
+}
+
+async function save(e) {
+  e.preventDefault();
+  const btn = document.getElementById('saveBtn');
+  const msg = document.getElementById('saveMsg');
+  btn.disabled = true;
+  msg.textContent = '저장 중…';
+
+  const flat = {};
+  for (const id of FIELDS) flat[id] = getVal(id);
+  const cfg = flatToCfg(flat);
+
+  try {
+    const r = await fetch('/api/alert_config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(cfg),
+    });
+    const d = await r.json();
+    msg.textContent = d.ok ? '✓ 저장 완료' : '오류: ' + d.error;
+  } catch(ex) {
+    msg.textContent = '오류: ' + ex;
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { msg.textContent = ''; }, 3000);
+  }
+}
+
+load();
+</script>
+{% endblock %}

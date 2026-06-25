@@ -1,0 +1,92 @@
+{% extends "stock/stock_layout.html" %}
+{% block title %}{{ report.title }} — GAGYE{% endblock %}
+{% block page_name %}보고서 상세{% endblock %}
+
+{% block content %}
+<style>
+.rpt-meta {
+    display:flex; align-items:center; gap:12px; margin-bottom:20px; flex-wrap:wrap;
+}
+.rpt-badge {
+    font-size:0.72rem; font-weight:700; padding:4px 10px; border-radius:12px;
+    font-family:var(--font-mono);
+}
+.badge-daily   { background:#dbeafe; color:#1d4ed8; }
+.badge-weekly  { background:#d1fae5; color:#065f46; }
+.badge-monthly { background:#ede9fe; color:#5b21b6; }
+.rpt-date  { font-size:0.8rem; color:var(--fg-3); font-family:var(--font-mono); }
+.rpt-title-h { font-size:1.25rem; font-weight:700; color:var(--fg-1); margin-bottom:4px; }
+
+.rpt-body {
+    background:var(--bg-2); border:1px solid var(--line-1);
+    border-radius:14px; padding:28px 32px;
+    box-shadow:var(--card-shadow);
+    font-size:0.93rem; line-height:1.75; color:var(--fg-1);
+    white-space:pre-line;
+}
+
+/* 마크다운 헤딩 스타일 */
+.rpt-body h2 {
+    font-size:1.15rem; font-weight:700; margin:24px 0 12px;
+    padding-bottom:8px; border-bottom:2px solid var(--lime);
+    color:var(--fg-1);
+}
+.rpt-body h3 {
+    font-size:1rem; font-weight:600; margin:18px 0 8px;
+    color:var(--fg-1);
+}
+.rpt-body ul { padding-left:1.4em; margin:6px 0; }
+.rpt-body li { margin:3px 0; }
+
+.back-btn {
+    display:inline-flex; align-items:center; gap:6px;
+    font-size:0.83rem; color:var(--fg-3); text-decoration:none;
+    margin-bottom:16px; padding:5px 0;
+}
+.back-btn:hover { color:var(--fg-1); }
+.copy-btn {
+    padding:6px 14px; border-radius:8px; font-size:0.82rem; font-weight:600;
+    border:1px solid var(--line-1); background:var(--bg-2); color:var(--fg-2);
+    cursor:pointer; transition:background .15s;
+}
+.copy-btn:hover { background:var(--bg-3); }
+</style>
+
+<a href="/reports" class="back-btn"><i class="bi bi-arrow-left"></i> 목록으로</a>
+
+<div class="rpt-meta">
+    <span class="rpt-badge badge-{{ report.report_type }}">
+        {{ {'daily':'일간','weekly':'주간','monthly':'월간'}[report.report_type] }}
+    </span>
+    <span class="rpt-date">{{ report.report_date }}</span>
+    <button class="copy-btn ms-auto" onclick="copyReport()">
+        <i class="bi bi-clipboard"></i> 복사
+    </button>
+</div>
+
+<div class="rpt-title-h mb-3">{{ report.title }}</div>
+
+<div class="rpt-body" id="reportBody">{{ report.content }}</div>
+
+<script>
+// 마크다운 헤딩 렌더링 (간단 변환)
+document.addEventListener('DOMContentLoaded', () => {
+    const el = document.getElementById('reportBody');
+    let html = el.textContent
+        .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+        .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+        .replace(/^- (.+)$/gm, '<li>$1</li>')
+        .replace(/(<li>.*<\/li>\n?)+/g, m => '<ul>' + m + '</ul>');
+    el.innerHTML = html;
+});
+
+function copyReport() {
+    const text = document.getElementById('reportBody').innerText;
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = document.querySelector('.copy-btn');
+        btn.innerHTML = '<i class="bi bi-check"></i> 복사됨';
+        setTimeout(() => { btn.innerHTML = '<i class="bi bi-clipboard"></i> 복사'; }, 2000);
+    });
+}
+</script>
+{% endblock %}

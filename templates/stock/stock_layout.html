@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}주식 현황 — GAGYE{% endblock %}</title>
+
+    <!-- FOUC 방지: 렌더링 전에 저장된 테마 즉시 적용 -->
+    <script>
+    (function(){
+        var t = localStorage.getItem('theme') || 'light';
+        document.documentElement.setAttribute('data-theme', t);
+    })();
+    </script>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/gagye.css">
+
+    <style>
+        /* ── 공통 (테마 무관) ── */
+        :root {
+            --sidebar-width: 240px;
+            --lime:        #c6f24e;
+            --up:          #f87171;
+            --down:        #6b9fc9;
+            --income:      #34d399;
+            --expense:     #f87171;
+            --r-2: 6px; --r-3: 10px; --r-4: 14px;
+            --font-sans: 'Inter', -apple-system, sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+        }
+
+        /* ── 라이트 모드 ── */
+        [data-theme="light"] {
+            --bg-0:   #eaecf2;
+            --bg-1:   #f4f6fb;
+            --bg-2:   #ffffff;
+            --bg-3:   #edf0f7;
+            --fg-1:   #0d1117;
+            --fg-2:   #424c63;
+            --fg-3:   #7a8499;
+            --line-1: rgba(0,0,0,0.07);
+            --line-2: rgba(0,0,0,0.12);
+            --lime-soft:   rgba(198,242,78,0.18);
+            --lime-border: rgba(130,180,20,0.35);
+            --nav-blur-bg:     rgba(244,246,251,0.96);
+            --bottom-tab-bg:   rgba(244,246,251,0.98);
+            --body-bg: radial-gradient(ellipse at 60% -20%, rgba(198,242,78,0.05), transparent 50%), #f4f6fb;
+            --card-shadow:     0 1px 4px rgba(0,0,0,0.08);
+            --menu-shadow:     0 8px 28px rgba(0,0,0,0.12);
+            --overlay-bg:      rgba(0,0,0,0.35);
+            --modal-bg:        rgba(0,0,0,0.5);
+            --accent:          #6aa800;
+            --accent-2:        #5a9200;
+            --accent-rgb:      106,168,0;
+            --accent-soft:     rgba(106,168,0,0.10);
+            --bg:              var(--bg-1);
+            --card-bg:         var(--bg-2);
+            --card-border:     var(--line-2);
+            --text:            var(--fg-1);
+            --text-2:          var(--fg-2);
+            --text-3:          var(--fg-3);
+            --input-bg:        var(--bg-3);
+            --input-border:    var(--line-2);
+            --radius:          var(--r-3);
+            --radius-sm:       var(--r-2);
+        }
+
+        /* ── 다크 모드 ── */
+        [data-theme="dark"] {
+            --bg-0:   #080b10;
+            --bg-1:   #0f1219;
+            --bg-2:   #161c27;
+            --bg-3:   #1d2435;
+            --fg-1:   #e4eaf6;
+            --fg-2:   #8892a4;
+            --fg-3:   #4a5570;
+            --line-1: rgba(255,255,255,0.07);
+            --line-2: rgba(255,255,255,0.13);
+            --lime-soft:   rgba(198,242,78,0.08);
+            --lime-border: rgba(198,242,78,0.22);
+            --nav-blur-bg:     rgba(8,11,16,0.92);
+            --bottom-tab-bg:   rgba(8,11,16,0.95);
+            --body-bg: radial-gradient(ellipse at 60% -20%, rgba(198,242,78,0.03), transparent 50%), #0f1219;
+            --card-shadow:     0 1px 3px rgba(0,0,0,0.4);
+            --menu-shadow:     0 8px 24px rgba(0,0,0,0.45);
+            --overlay-bg:      rgba(0,0,0,0.6);
+            --modal-bg:        rgba(0,0,0,0.7);
+            --accent:          #b8e63e;
+            --accent-2:        #9fcf2e;
+            --accent-rgb:      184,230,62;
+            --accent-soft:     rgba(198,242,78,0.08);
+            --bg:              var(--bg-1);
+            --card-bg:         var(--bg-2);
+            --card-border:     var(--line-2);
+            --text:            var(--fg-1);
+            --text-2:          var(--fg-2);
+            --text-3:          var(--fg-3);
+            --input-bg:        var(--bg-3);
+            --input-border:    var(--line-2);
+            --radius:          var(--r-3);
+            --radius-sm:       var(--r-2);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: var(--body-bg);
+            font-family: var(--font-sans);
+            color: var(--fg-1);
+            min-height: 100vh;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        /* ── 스크롤바 ── */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--fg-3); }
+
+        /* ── 사이드바 ── */
+        .sidebar {
+            width: var(--sidebar-width);
+            height: 100vh;
+            position: fixed; top: 0; left: calc(-1 * var(--sidebar-width));
+            z-index: 1050;
+            background: var(--bg-0);
+            border-right: 1px solid var(--line-1);
+            transition: left 0.2s ease, background 0.2s;
+            display: flex; flex-direction: column;
+            overflow: hidden;
+        }
+        @media (min-width: 992px) {
+            .sidebar { left: 0; }
+            .main-wrapper { margin-left: var(--sidebar-width); }
+            .navbar-top { left: var(--sidebar-width); width: calc(100% - var(--sidebar-width)); }
+            .toggle-btn { display: none !important; }
+            .overlay { display: none !important; }
+        }
+        @media (max-width: 991.98px) {
+            .sidebar.active { transform: translateX(var(--sidebar-width)); }
+            .main-content { padding-bottom: 80px; }
+            .index-bar { left: 0 !important; }
+        }
+
+        .overlay {
+            position: fixed; inset: 0;
+            background: var(--overlay-bg);
+            display: none; z-index: 1040;
+            backdrop-filter: blur(2px);
+        }
+        .overlay.active { display: block; }
+
+        /* ── 로고 ── */
+        .sidebar-logo {
+            padding: 20px 18px 16px;
+            display: flex; align-items: center; gap: 10px;
+            border-bottom: 1px solid var(--line-1);
+            text-decoration: none;
+        }
+        .logo-mark {
+            width: 30px; height: 30px;
+            background: var(--lime);
+            border-radius: 7px;
+            display: flex; align-items: center; justify-content: center;
+            color: #080b10;
+            font-weight: 800; font-size: 0.85rem;
+            font-family: var(--font-mono);
+            flex-shrink: 0;
+            box-shadow: 0 0 14px rgba(198,242,78,0.25);
+        }
+        .logo-text {
+            font-weight: 700; font-size: 0.92rem;
+            color: var(--fg-1);
+            font-family: var(--font-mono);
+            letter-spacing: -0.01em;
+        }
+        .logo-sub {
+            font-size: 0.62rem; color: var(--fg-3);
+            font-family: var(--font-mono);
+            letter-spacing: 0.06em; text-transform: uppercase;
+        }
+
+        /* ── 네비 ── */
+        .nav-section {
+            padding: 14px 10px 8px;
+            flex: 1; overflow-y: auto;
+        }
+        .nav-section-label {
+            font-size: 0.62rem; font-weight: 600;
+            letter-spacing: 0.1em; text-transform: uppercase;
+            color: var(--fg-3);
+            padding: 0 8px; margin: 10px 0 4px;
+            font-family: var(--font-mono);
+            display: block;
+        }
+        .sidebar-nav-link {
+            display: flex; align-items: center; gap: 9px;
+            padding: 7px 10px; border-radius: var(--r-2);
+            color: var(--fg-2); font-size: 0.84rem; font-weight: 500;
+            margin-bottom: 1px; transition: background 0.15s, color 0.15s;
+            text-decoration: none;
+            width: 100%; text-align: left;
+            background: transparent; border: none; cursor: pointer;
+        }
+        .sidebar-nav-link i {
+            font-size: 0.95rem; width: 16px;
+            text-align: center; flex-shrink: 0;
+        }
+        .sidebar-nav-link:hover {
+            background: var(--lime-soft);
+            color: var(--fg-1);
+        }
+        .sidebar-nav-link.active {
+            background: var(--lime-soft);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        .sidebar-nav-link.active i { color: var(--accent); }
+
+        /* ── 사이드바 하단 유저 ── */
+        .sidebar-user {
+            padding: 10px;
+            border-top: 1px solid var(--line-1);
+        }
+        .session-menu {
+            position: absolute; bottom: 100%;
+            left: 10px; right: 10px;
+            background: var(--bg-2);
+            border: 1px solid var(--line-2);
+            border-radius: var(--r-3); overflow: hidden;
+            opacity: 0; transform: translateY(6px);
+            pointer-events: none;
+            transition: opacity 0.15s, transform 0.15s;
+            margin-bottom: 6px; z-index: 10;
+            box-shadow: var(--menu-shadow);
+        }
+        .session-menu.open { opacity: 1; transform: translateY(0); pointer-events: all; }
+        .session-menu-item {
+            display: flex; align-items: center; gap: 9px;
+            padding: 9px 13px; font-size: 0.82rem; font-weight: 500;
+            color: var(--fg-2); cursor: pointer; transition: background 0.12s;
+            border: none; background: transparent; width: 100%; text-align: left;
+        }
+        .session-menu-item:hover { background: var(--line-1); color: var(--fg-1); }
+        .session-menu-item.danger:hover { background: rgba(248,113,113,0.1); color: #f87171; }
+        .session-menu-item i { font-size: 0.88rem; width: 16px; text-align: center; flex-shrink: 0; }
+        .session-menu-divider {
+            height: 1px; background: var(--line-1); margin: 3px 0;
+        }
+
+        /* 테마 토글 스위치 */
+        .theme-pill {
+            width: 30px; height: 17px; border-radius: 9px;
+            position: relative; flex-shrink: 0; margin-left: auto;
+            transition: background 0.2s;
+        }
+        .theme-thumb {
+            width: 13px; height: 13px; border-radius: 50%;
+            background: #fff; position: absolute; top: 2px; left: 2px;
+            transition: left 0.2s, background 0.2s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+        }
+
+        .user-card {
+            display: flex; align-items: center; gap: 9px;
+            padding: 9px 11px; background: var(--bg-2);
+            border-radius: var(--r-2); border: 1px solid var(--line-1);
+            cursor: pointer; transition: background 0.15s, border-color 0.15s;
+            text-decoration: none;
+        }
+        .user-card:hover { background: var(--bg-3); border-color: var(--line-2); }
+        .user-avatar {
+            width: 28px; height: 28px;
+            background: var(--lime-soft);
+            border: 1px solid var(--lime-border);
+            border-radius: 6px; display: flex;
+            align-items: center; justify-content: center;
+            font-size: 0.75rem; color: var(--accent);
+            font-weight: 700; font-family: var(--font-mono);
+            flex-shrink: 0;
+        }
+        .user-info { flex: 1; min-width: 0; }
+        .user-name {
+            color: var(--fg-1); font-size: 0.8rem; font-weight: 600;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .user-role { color: var(--fg-3); font-size: 0.66rem; font-family: var(--font-mono); }
+        .user-card .chevron {
+            color: var(--fg-3); font-size: 0.75rem;
+            transition: transform 0.15s; flex-shrink: 0;
+        }
+        .user-card.open .chevron { transform: rotate(180deg); }
+
+        /* ── 모달 ── */
+        .confirm-modal-backdrop {
+            position: fixed; inset: 0;
+            background: var(--modal-bg);
+            backdrop-filter: blur(4px);
+            z-index: 2000; display: none;
+            align-items: center; justify-content: center;
+        }
+        .confirm-modal-backdrop.show { display: flex; }
+        .confirm-modal {
+            background: var(--bg-2);
+            border: 1px solid var(--line-2);
+            border-radius: var(--r-4); padding: 28px 24px 22px;
+            width: 320px;
+            box-shadow: var(--menu-shadow);
+            text-align: center;
+        }
+        .confirm-modal .modal-icon {
+            width: 46px; height: 46px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.2rem; margin: 0 auto 14px;
+        }
+        .confirm-modal .modal-icon.danger  { background: rgba(248,113,113,0.12); border: 1px solid rgba(248,113,113,0.2); }
+        .confirm-modal .modal-icon.warning { background: rgba(251,191,36,0.12);  border: 1px solid rgba(251,191,36,0.2); }
+        .confirm-modal h6 { font-weight: 700; font-size: 0.98rem; color: var(--fg-1); margin-bottom: 6px; }
+        .confirm-modal p  { font-size: 0.82rem; color: var(--fg-2); margin-bottom: 22px; line-height: 1.6; }
+        .confirm-modal .modal-btns { display: flex; gap: 8px; }
+        .confirm-modal .btn-cancel {
+            flex: 1; padding: 9px; border-radius: var(--r-2);
+            border: 1px solid var(--line-2); background: var(--bg-3);
+            font-size: 0.84rem; font-weight: 600; color: var(--fg-1);
+            cursor: pointer; transition: background 0.15s;
+        }
+        .confirm-modal .btn-cancel:hover { background: var(--bg-3); border-color: var(--fg-3); }
+        .confirm-modal .btn-confirm {
+            flex: 1; padding: 9px; border-radius: var(--r-2);
+            border: none; font-size: 0.84rem; font-weight: 700;
+            cursor: pointer; transition: filter 0.15s;
+        }
+        .confirm-modal .btn-confirm.danger  { background: #f87171; color: #fff; }
+        .confirm-modal .btn-confirm.danger:hover  { filter: brightness(1.1); }
+        .confirm-modal .btn-confirm.warning { background: #fbbf24; color: #080b10; }
+        .confirm-modal .btn-confirm.warning:hover { filter: brightness(1.1); }
+
+        /* ── 상단 네비 ── */
+        .navbar-top {
+            background: var(--nav-blur-bg) !important;
+            border-bottom: 1px solid var(--line-1) !important;
+            box-shadow: none !important;
+            height: 52px;
+            backdrop-filter: blur(12px);
+            overflow: visible !important;
+            transition: background 0.2s;
+        }
+        .toggle-btn {
+            width: 32px; height: 32px; background: transparent;
+            border: 1px solid var(--line-2); border-radius: var(--r-2);
+            display: flex; align-items: center; justify-content: center;
+            color: var(--fg-2); transition: background 0.15s, color 0.15s;
+        }
+        .toggle-btn:hover { background: var(--bg-3); color: var(--fg-1); }
+        .page-title {
+            font-weight: 600; font-size: 0.9rem; color: var(--fg-1);
+            font-family: var(--font-mono); letter-spacing: -0.01em;
+        }
+        .add-btn {
+            background: var(--accent); color: #fff;
+            border: none; border-radius: var(--r-2);
+            font-size: 0.78rem; font-weight: 700;
+            padding: 6px 12px; display: flex; align-items: center; gap: 4px;
+            transition: filter 0.15s; text-decoration: none;
+            font-family: var(--font-mono);
+        }
+        [data-theme="dark"] .add-btn { color: #080b10; }
+        .add-btn:hover { filter: brightness(1.1); }
+        [data-theme="dark"] .add-btn:hover { color: #080b10; }
+        [data-theme="light"] .add-btn:hover { color: #fff; }
+
+        /* ── 메인 ── */
+        .main-content { padding-top: 96px; }
+        @media(max-width:991px){ .main-content { padding-top: 96px; } }
+
+        /* ── 하단 탭바 ── */
+        .bottom-tab {
+            background: var(--bottom-tab-bg) !important;
+            border-top: 1px solid var(--line-1) !important;
+            backdrop-filter: blur(12px);
+            box-shadow: none !important;
+            height: 58px;
+            transition: background 0.2s;
+        }
+        .bottom-tab-link {
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            padding: 5px 0;
+            color: var(--fg-3); font-size: 0.6rem; font-weight: 500;
+            gap: 3px; transition: color 0.15s;
+            text-decoration: none;
+        }
+        .bottom-tab-link i { font-size: 1.1rem; }
+        .bottom-tab-link.active-tab { color: var(--accent); }
+
+        /* ── 카드 ── */
+        .card {
+            border: 1px solid var(--line-1) !important;
+            border-radius: var(--r-3) !important;
+            box-shadow: var(--card-shadow) !important;
+            background: var(--bg-2) !important;
+            color: var(--fg-1) !important;
+        }
+
+        /* ── 버튼 ── */
+        .btn-primary {
+            background: var(--accent) !important;
+            border-color: var(--accent) !important;
+            border-radius: var(--r-2) !important;
+            color: #fff !important;
+            font-weight: 700 !important;
+        }
+        [data-theme="dark"] .btn-primary { color: #080b10 !important; }
+        .btn-primary:hover { filter: brightness(1.08); }
+        .btn-outline-secondary {
+            border-radius: var(--r-2) !important;
+            font-weight: 500 !important;
+            border-color: var(--line-2) !important;
+            color: var(--fg-2) !important;
+            background: transparent !important;
+        }
+        .btn-outline-secondary:hover {
+            background: var(--bg-3) !important;
+            color: var(--fg-1) !important;
+            border-color: var(--line-2) !important;
+        }
+
+        /* ── 폼 ── */
+        .form-control, .form-select {
+            border-radius: var(--r-2) !important;
+            border-color: var(--line-2) !important;
+            font-size: 0.87rem !important;
+            color: var(--fg-1) !important;
+            background: var(--bg-3) !important;
+        }
+        .form-control:focus, .form-select:focus {
+            border-color: var(--accent) !important;
+            box-shadow: 0 0 0 2px rgba(var(--accent-rgb),0.14) !important;
+            background: var(--bg-3) !important;
+            color: var(--fg-1) !important;
+        }
+        .form-control::placeholder { color: var(--fg-3) !important; }
+        .input-group-text {
+            background: var(--bg-3) !important;
+            border-color: var(--line-2) !important;
+            color: var(--fg-2) !important;
+        }
+
+        /* ── 테이블 ── */
+        .table { color: var(--fg-1) !important; }
+        .table th {
+            font-size: 0.7rem !important; font-weight: 600 !important;
+            color: var(--fg-3) !important; font-family: var(--font-mono) !important;
+            letter-spacing: 0.05em; text-transform: uppercase;
+            background: var(--bg-3) !important; border-color: var(--line-1) !important;
+        }
+        .table td { border-color: var(--line-1) !important; color: var(--fg-1) !important; }
+        .table-hover > tbody > tr:hover > * { background: var(--lime-soft) !important; }
+        thead { background: var(--bg-3) !important; }
+
+        /* ── 뱃지 ── */
+        .badge { border-radius: 4px !important; font-weight: 600 !important; font-family: var(--font-mono) !important; }
+
+        /* ── 구분선 ── */
+        hr { border-color: var(--line-1) !important; opacity: 1 !important; }
+
+        /* ── 시장 지수 바 ── */
+        .index-bar {
+            position: fixed; top: 52px; left: var(--sidebar-width);
+            right: 0; height: 32px; z-index: 990;
+            background: var(--bg-0);
+            border-bottom: 1px solid var(--line-1);
+            display: flex; align-items: center;
+            padding: 0 18px; gap: 22px; overflow-x: auto;
+            transition: background 0.2s;
+        }
+        .index-bar::-webkit-scrollbar { display: none; }
+        .index-item { display: flex; align-items: center; gap: 6px; white-space: nowrap; flex-shrink: 0; }
+        .index-name  { font-size: 0.66rem; font-weight: 600; color: var(--fg-3); letter-spacing: 0.04em; font-family: var(--font-mono); }
+        .index-price { font-size: 0.76rem; font-weight: 600; color: var(--fg-1); font-family: var(--font-mono); }
+        .index-chg   { font-size: 0.68rem; font-weight: 600; padding: 1px 5px; border-radius: 3px; font-family: var(--font-mono); }
+        .index-chg.up   { color: #f87171; background: rgba(248,113,113,0.10); }
+        .index-chg.down { color: #6b9fc9; background: rgba(107,159,201,0.10); }
+        .index-chg.flat { color: var(--fg-3); }
+        .index-divider  { width: 1px; height: 14px; background: var(--line-1); flex-shrink: 0; }
+
+        /* ── 어드바이저 패널 ── */
+        .advisor-overlay {
+            position: fixed; inset: 0;
+            background: var(--overlay-bg);
+            backdrop-filter: blur(2px);
+            z-index: 1999; display: none;
+        }
+        .advisor-overlay.open { display: block; }
+        .advisor-panel {
+            position: fixed; top: 0; right: -440px; width: 420px; height: 100vh;
+            background: var(--bg-1);
+            border-left: 1px solid var(--line-2);
+            z-index: 2000; transition: right 0.25s ease;
+            display: flex; flex-direction: column;
+            box-shadow: -8px 0 32px rgba(0,0,0,0.15);
+        }
+        .advisor-panel.open { right: 0; }
+        @media(max-width:480px) { .advisor-panel { width: 100vw; right: -100vw; } }
+        .advisor-header {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--line-1);
+            display: flex; align-items: center; justify-content: space-between;
+            flex-shrink: 0;
+        }
+        .advisor-header h6 {
+            margin: 0; font-weight: 700; font-size: 0.9rem;
+            color: var(--fg-1); display: flex; align-items: center; gap: 8px;
+        }
+        .advisor-header h6 i { color: var(--accent); }
+        .advisor-close {
+            width: 28px; height: 28px; border-radius: var(--r-2);
+            border: 1px solid var(--line-2);
+            background: transparent; color: var(--fg-2);
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            font-size: 0.9rem; transition: background 0.15s, color 0.15s;
+        }
+        .advisor-close:hover { background: rgba(248,113,113,0.1); color: #f87171; border-color: rgba(248,113,113,0.2); }
+        .advisor-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
+        .advisor-search-row { display: flex; gap: 8px; margin-bottom: 12px; }
+        .advisor-input {
+            flex: 1; padding: 8px 11px;
+            border: 1px solid var(--line-2); border-radius: var(--r-2);
+            font-size: 0.83rem; color: var(--fg-1);
+            background: var(--bg-3); outline: none;
+            transition: border-color 0.15s;
+        }
+        .advisor-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(var(--accent-rgb),0.12); }
+        .advisor-input::placeholder { color: var(--fg-3); }
+        .advisor-btn {
+            padding: 8px 14px; border-radius: var(--r-2); border: none;
+            background: var(--accent); color: #fff;
+            font-size: 0.8rem; font-weight: 700; cursor: pointer;
+            transition: filter 0.15s; white-space: nowrap;
+            font-family: var(--font-mono);
+        }
+        [data-theme="dark"] .advisor-btn { color: #080b10; }
+        .advisor-btn:hover { filter: brightness(1.1); }
+        .advisor-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .advisor-dropdown { position: relative; margin-bottom: 4px; }
+        .advisor-dropdown-list {
+            position: absolute; top: 0; left: 0; right: 0; z-index: 10;
+            background: var(--bg-2); border: 1px solid var(--line-2);
+            border-radius: var(--r-2);
+            box-shadow: var(--menu-shadow);
+            max-height: 200px; overflow-y: auto; display: none;
+        }
+        .advisor-dropdown-item {
+            padding: 9px 12px; cursor: pointer; font-size: 0.82rem;
+            border-bottom: 1px solid var(--line-1);
+            transition: background 0.1s; color: var(--fg-1);
+        }
+        .advisor-dropdown-item:last-child { border-bottom: none; }
+        .advisor-dropdown-item:hover { background: var(--bg-3); }
+        .advisor-result {
+            background: var(--bg-2);
+            border: 1px solid var(--line-1);
+            border-radius: var(--r-2); padding: 13px; font-size: 0.82rem;
+            line-height: 1.7; color: var(--fg-1);
+            white-space: pre-wrap; word-break: break-word;
+        }
+        .advisor-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+        .advisor-chip {
+            padding: 3px 9px; border-radius: 4px; font-size: 0.7rem; font-weight: 500;
+            background: var(--bg-3); border: 1px solid var(--line-1);
+            color: var(--fg-2); font-family: var(--font-mono);
+        }
+        .advisor-loading { text-align: center; padding: 40px 0; color: var(--fg-3); font-size: 0.82rem; }
+        .advisor-spinner {
+            width: 22px; height: 22px; border: 2px solid var(--line-2);
+            border-top-color: var(--accent); border-radius: 50%;
+            animation: spin .7s linear infinite; display: inline-block; margin-bottom: 10px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .adv-section {
+            background: var(--bg-2);
+            border: 1px solid var(--line-1);
+            border-radius: var(--r-2); padding: 12px; margin-bottom: 10px;
+        }
+        .adv-section-title {
+            font-size: 0.7rem; font-weight: 600; color: var(--fg-3);
+            margin-bottom: 9px; font-family: var(--font-mono);
+            text-transform: uppercase; letter-spacing: 0.06em;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .adv-btn-group { display: flex; flex-wrap: wrap; gap: 5px; }
+        .adv-toggle {
+            padding: 5px 11px; border-radius: var(--r-2); font-size: 0.76rem; font-weight: 500;
+            border: 1px solid var(--line-2);
+            background: var(--bg-3); color: var(--fg-2);
+            cursor: pointer; transition: background 0.15s, border-color 0.15s, color 0.15s;
+        }
+        .adv-toggle:hover { border-color: var(--lime-border); color: var(--fg-1); }
+        .adv-toggle.active { background: var(--lime-soft); color: var(--accent); border-color: var(--lime-border); }
+        .adv-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+        .adv-label { font-size: 0.74rem; color: var(--fg-3); font-weight: 500; white-space: nowrap; font-family: var(--font-mono); }
+        .adv-num-input {
+            width: 110px; padding: 5px 9px; border: 1px solid var(--line-2);
+            border-radius: var(--r-2); font-size: 0.8rem; color: var(--fg-1);
+            background: var(--bg-3); outline: none;
+        }
+        .adv-num-input:focus { border-color: var(--accent); }
+        .adv-slider { flex: 1; min-width: 80px; accent-color: var(--accent); }
+        .adv-slider-val { font-size: 0.78rem; font-weight: 700; color: var(--accent); min-width: 36px; font-family: var(--font-mono); }
+        .adv-textarea {
+            width: 100%; padding: 8px 10px; border: 1px solid var(--line-2);
+            border-radius: var(--r-2); font-size: 0.78rem; color: var(--fg-1);
+            background: var(--bg-3); outline: none; resize: none;
+            line-height: 1.5; margin-top: 6px; font-family: inherit;
+        }
+        .adv-textarea:focus { border-color: var(--accent); }
+        .adv-textarea::placeholder { color: var(--fg-3); }
+
+        @keyframes blink { 50% { opacity: 0; } }
+
+        /* ── 페이지 탭바 (paired pages) ── */
+        .page-tabs { display:flex; gap:4px; background:var(--bg-2); border:1px solid var(--line-1); border-radius:var(--r-3); padding:4px; margin-bottom:20px; }
+        .ptab { flex:1; text-align:center; padding:7px 12px; border-radius:var(--r-2); font-size:0.83rem; font-weight:600; text-decoration:none; color:var(--fg-2); transition:background .15s,color .15s; display:flex; align-items:center; justify-content:center; gap:6px; }
+        .ptab.active { background:var(--accent); color:#fff; }
+        [data-theme="dark"] .ptab.active { color:#080b10; }
+        .ptab:hover:not(.active) { background:var(--lime-soft); color:var(--fg-1); }
+    </style>
+</head>
+<body>
+
+    <!-- 사이드바 -->
+    <aside class="sidebar" id="sidebar">
+        <a href="/stock_live" class="sidebar-logo">
+            <div class="logo-mark">주</div>
+            <div>
+                <div class="logo-text">GAGYE</div>
+                <div class="logo-sub">주식 시장</div>
+            </div>
+        </a>
+
+        <div class="nav-section">
+            <span class="nav-section-label">시장</span>
+            <ul class="list-unstyled mb-0">
+                <li><a href="/stock_dashboard" class="sidebar-nav-link {% if request.path == '/stock_dashboard' %}active{% endif %}"><i class="bi bi-house"></i>홈</a></li>
+                <li><a href="/stock_live"      class="sidebar-nav-link {% if request.path == '/stock_live' %}active{% endif %}"><i class="bi bi-graph-up-arrow"></i>실시간 시세</a></li>
+                <li><a href="/trade_stats"     class="sidebar-nav-link {% if request.path == '/trade_stats' %}active{% endif %}"><i class="bi bi-boxes"></i>수출입 동향</a></li>
+                <li><a href="/macro_dashboard" class="sidebar-nav-link {% if request.path == '/macro_dashboard' %}active{% endif %}"><i class="bi bi-globe2"></i>거시지표</a></li>
+            </ul>
+            <span class="nav-section-label" style="margin-top:14px;">종목</span>
+            <ul class="list-unstyled mb-0">
+                <li><a href="/stock_detail"    class="sidebar-nav-link {% if request.path == '/stock_detail' %}active{% endif %}"><i class="bi bi-zoom-in"></i>종목 상세</a></li>
+                <li><a href="/stock_compare"   class="sidebar-nav-link {% if request.path == '/stock_compare' %}active{% endif %}"><i class="bi bi-activity"></i>종목 분석</a></li>
+                <li><a href="/stock_compare_v2" class="sidebar-nav-link {% if request.path == '/stock_compare_v2' %}active{% endif %}"><i class="bi bi-bar-chart-steps"></i>종목 비교</a></li>
+                <li><a href="/financial"       class="sidebar-nav-link {% if request.path == '/financial' %}active{% endif %}"><i class="bi bi-graph-up"></i>기업실적분석</a></li>
+            </ul>
+            {% if session.get('user_no') %}
+            <span class="nav-section-label" style="margin-top:14px;">포트폴리오</span>
+            <ul class="list-unstyled mb-0">
+                <li><a href="/stock_portfolio_kr" class="sidebar-nav-link {% if request.path in ['/stock_portfolio_kr', '/stock_portfolio'] %}active{% endif %}"><i class="bi bi-briefcase"></i>포트폴리오</a></li>
+                <li><a href="/portfolio_opt"      class="sidebar-nav-link {% if request.path == '/portfolio_opt' %}active{% endif %}"><i class="bi bi-pie-chart"></i>포트폴리오 최적화</a></li>
+                <li><a href="/portfolio_perf"     class="sidebar-nav-link {% if request.path == '/portfolio_perf' %}active{% endif %}"><i class="bi bi-bar-chart-fill"></i>월별 성과</a></li>
+                <li><a href="/paper_trading"      class="sidebar-nav-link {% if request.path == '/paper_trading' %}active{% endif %}"><i class="bi bi-bullseye"></i>가상매매</a></li>
+                <li><a href="/tax"                class="sidebar-nav-link {% if request.path == '/tax' %}active{% endif %}"><i class="bi bi-receipt"></i>세금 계산</a></li>
+            </ul>
+            <span class="nav-section-label" style="margin-top:14px;">스크리닝</span>
+            <ul class="list-unstyled mb-0">
+                <li><a href="/stock_filter"        class="sidebar-nav-link {% if request.path == '/stock_filter' %}active{% endif %}"><i class="bi bi-funnel"></i>종목 필터</a></li>
+                <li><a href="/stock_kiwoom_filter" class="sidebar-nav-link {% if request.path == '/stock_kiwoom_filter' %}active{% endif %}"><i class="bi bi-sliders"></i>키움 조건검색</a></li>
+                <li><a href="/stock_theme_filter"  class="sidebar-nav-link {% if request.path == '/stock_theme_filter' %}active{% endif %}"><i class="bi bi-tags"></i>테마 필터</a></li>
+            </ul>
+            <span class="nav-section-label" style="margin-top:14px;">AI · 전략</span>
+            <ul class="list-unstyled mb-0">
+                <li><a href="/recommend"               class="sidebar-nav-link {% if request.path in ['/recommend', '/recommend_abs'] %}active{% endif %}"><i class="bi bi-stars"></i>AI 추천</a></li>
+                <li><a href="/stock_recommend_history" class="sidebar-nav-link {% if request.path == '/stock_recommend_history' %}active{% endif %}"><i class="bi bi-clock-history"></i>추천 기록</a></li>
+                <li>
+                    <button onclick="openAdvisor()" class="sidebar-nav-link">
+                        <i class="bi bi-lightbulb"></i><span>매수/매도 분석</span>
+                    </button>
+                </li>
+                <li><a href="/backtest"           class="sidebar-nav-link {% if request.path == '/backtest' %}active{% endif %}"><i class="bi bi-skip-backward"></i>백테스트</a></li>
+                <li><a href="/quant"              class="sidebar-nav-link {% if request.path == '/quant' %}active{% endif %}"><i class="bi bi-bar-chart-steps"></i>퀀트 트레이딩</a></li>
+                <li><a href="/stock_ai_performance" class="sidebar-nav-link {% if request.path in ['/stock_ai_performance', '/stock_train_report'] %}active{% endif %}"><i class="bi bi-file-bar-graph"></i>ML 리포트</a></li>
+                <li><a href="/train_report"       class="sidebar-nav-link {% if request.path == '/train_report' %}active{% endif %}"><i class="bi bi-clipboard-data"></i>학습 리포트</a></li>
+                <li><a href="/pipeline"           class="sidebar-nav-link {% if request.path == '/pipeline' %}active{% endif %}"><i class="bi bi-diagram-3"></i>파이프라인</a></li>
+                <li><a href="/reports" class="sidebar-nav-link {% if request.path.startswith('/reports') %}active{% endif %}"><i class="bi bi-journal-text"></i>시장 보고서</a></li>
+            </ul>
+            <span class="nav-section-label" style="margin-top:14px;">리서치 · 알림</span>
+            <ul class="list-unstyled mb-0">
+                <li><a href="/company_research" class="sidebar-nav-link {% if request.path == '/company_research' %}active{% endif %}"><i class="bi bi-building-check"></i>기업 리서치</a></li>
+                <li><a href="/news"             class="sidebar-nav-link {% if request.path == '/news' %}active{% endif %}"><i class="bi bi-newspaper"></i>뉴스 검색</a></li>
+                <li><a href="/morning_news"     class="sidebar-nav-link {% if request.path == '/morning_news' %}active{% endif %}"><i class="bi bi-sun"></i>개장전 뉴스</a></li>
+                <li><a href="/dart_alert"       class="sidebar-nav-link {% if request.path == '/dart_alert' %}active{% endif %}"><i class="bi bi-bell"></i>공시 알림</a></li>
+                <li><a href="/price_alert"      class="sidebar-nav-link {% if request.path == '/price_alert' %}active{% endif %}"><i class="bi bi-bell-fill"></i>가격 알림</a></li>
+                <li><a href="/alert_config"     class="sidebar-nav-link {% if request.path == '/alert_config' %}active{% endif %}"><i class="bi bi-gear"></i>알림 설정</a></li>
+                <li><a href="/notify_history"   class="sidebar-nav-link {% if request.path == '/notify_history' %}active{% endif %}"><i class="bi bi-clock-history"></i>알림 이력</a></li>
+            </ul>
+            {% endif %}
+        </div>
+
+        <div class="sidebar-user" style="position:relative;">
+            {% if session.get('user_no') %}
+                <div class="session-menu" id="sessionMenu">
+                    <a href="/my-page" class="session-menu-item" style="text-decoration:none;">
+                        <i class="bi bi-person-gear"></i> <span>내 정보 수정</span>
+                    </a>
+                    <div class="session-menu-divider"></div>
+                    <!-- 테마 토글 -->
+                    <button class="session-menu-item" onclick="toggleTheme(event)">
+                        <i id="themeMenuIcon" class="bi bi-brightness-high"></i>
+                        <span id="themeMenuLabel">라이트 모드</span>
+                        <div class="theme-pill" id="themePill" style="background:var(--line-2);">
+                            <div class="theme-thumb" id="themeThumb"></div>
+                        </div>
+                    </button>
+                    <div class="session-menu-divider"></div>
+                    <button class="session-menu-item" id="kiwoomMenuBtn" onclick="handleKiwoomLogin()">
+                        <i class="bi bi-plug"></i> <span id="kiwoomMenuLabel">키움 API 연결</span>
+                    </button>
+                    <button class="session-menu-item danger" onclick="showModal('logout')">
+                        <i class="bi bi-box-arrow-right"></i> 로그아웃
+                    </button>
+                </div>
+                <div class="user-card" id="userCard" onclick="toggleSessionMenu()">
+                    <div class="user-avatar">{{ session.get('user_name', '사')[0] }}</div>
+                    <div class="user-info">
+                        <div class="user-name">{{ session.get('user_name', '사용자') }}님</div>
+                        <div class="user-role">personal · account</div>
+                    </div>
+                    <i class="bi bi-chevron-up chevron"></i>
+                </div>
+            {% else %}
+                <!-- 비로그인: 테마 토글 단독 표시 -->
+                <button class="session-menu-item" onclick="toggleTheme(event)"
+                    style="width:100%; border-radius:var(--r-2); border:1px solid var(--line-1); background:var(--bg-2); margin-bottom:8px;">
+                    <i id="themeMenuIcon" class="bi bi-brightness-high"></i>
+                    <span id="themeMenuLabel">라이트 모드</span>
+                    <div class="theme-pill" id="themePill" style="background:var(--line-2);">
+                        <div class="theme-thumb" id="themeThumb"></div>
+                    </div>
+                </button>
+                <a href="/login" class="user-card">
+                    <div class="user-avatar" style="background:var(--bg-3);border-color:var(--line-2);">
+                        <i class="bi bi-person" style="font-size:0.9rem;color:var(--fg-3);"></i>
+                    </div>
+                    <div class="user-info">
+                        <div class="user-name">로그인이 필요해요</div>
+                        <div class="user-role">click to sign in</div>
+                    </div>
+                    <i class="bi bi-chevron-right" style="color:var(--fg-3);font-size:0.75rem;"></i>
+                </a>
+            {% endif %}
+        </div>
+    </aside>
+
+    <!-- 매수/매도 어드바이저 패널 -->
+    <div class="advisor-overlay" id="advisorOverlay" onclick="closeAdvisor()"></div>
+    <div class="advisor-panel" id="advisorPanel">
+        <div class="advisor-header">
+            <h6><i class="bi bi-lightbulb"></i>매수/매도 분석</h6>
+            <button class="advisor-close" onclick="closeAdvisor()"><i class="bi bi-x"></i></button>
+        </div>
+        <div class="advisor-body">
+            <div class="advisor-search-row">
+                <div style="position:relative;flex:1;">
+                    <input type="text" id="advisorInput" class="advisor-input"
+                        placeholder="종목명 또는 코드 (예: 삼성전자)"
+                        oninput="advisorSearch()"
+                        onkeydown="if(event.key==='Enter') runAdvisor()">
+                    <div id="advisorDropdown" class="advisor-dropdown-list"></div>
+                </div>
+                <button class="advisor-btn" id="advisorRunBtn" onclick="runAdvisor()">분석</button>
+            </div>
+            <div id="advisorSelectedBadge" style="display:none;margin-bottom:10px;">
+                <span style="font-size:0.72rem;color:var(--fg-3);font-family:var(--font-mono);">선택:</span>
+                <span id="advisorSelectedLabel" style="font-size:0.82rem;font-weight:600;color:var(--accent);margin-left:6px;font-family:var(--font-mono);"></span>
+            </div>
+            <div class="adv-section">
+                <div class="adv-section-title"><i class="bi bi-calendar3"></i>투자 기간</div>
+                <div class="adv-btn-group" id="periodGroup">
+                    <button class="adv-toggle" data-val="단기(1~2주)" onclick="toggleAdv('periodGroup',this)">단기 1~2주</button>
+                    <button class="adv-toggle active" data-val="중기(1~3개월)" onclick="toggleAdv('periodGroup',this)">중기 1~3개월</button>
+                    <button class="adv-toggle" data-val="장기(6개월 이상)" onclick="toggleAdv('periodGroup',this)">장기 6개월+</button>
+                </div>
+            </div>
+            <div class="adv-section">
+                <div class="adv-section-title"><i class="bi bi-wallet2"></i>보유 현황 (선택)</div>
+                <div class="adv-btn-group" id="holdGroup">
+                    <button class="adv-toggle active" data-val="미보유" onclick="toggleAdv('holdGroup',this);toggleHoldForm(false)">미보유</button>
+                    <button class="adv-toggle" data-val="보유중" onclick="toggleAdv('holdGroup',this);toggleHoldForm(true)">보유중</button>
+                </div>
+                <div id="holdForm" style="display:none;">
+                    <div class="adv-row" style="margin-top:10px;">
+                        <span class="adv-label">평균단가</span>
+                        <input type="number" id="avgPrice" class="adv-num-input" placeholder="0" min="0">
+                        <span class="adv-label">원</span>
+                        <span class="adv-label" style="margin-left:8px;">수량</span>
+                        <input type="number" id="holdQty" class="adv-num-input" placeholder="0" min="0">
+                        <span class="adv-label">주</span>
+                    </div>
+                </div>
+            </div>
+            <div class="adv-section">
+                <div class="adv-section-title"><i class="bi bi-shield-exclamation"></i>최대 허용 손실</div>
+                <div class="adv-row" style="margin-top:2px;">
+                    <input type="range" id="stopLossSlider" class="adv-slider"
+                        min="3" max="20" value="10" step="1"
+                        oninput="document.getElementById('stopLossVal').textContent=this.value+'%'">
+                    <span class="adv-slider-val" id="stopLossVal">10%</span>
+                </div>
+                <div style="font-size:0.68rem;color:var(--fg-3);margin-top:4px;font-family:var(--font-mono);">
+                    이 이상 하락 시 손절 — 손절가 계산에 반영됩니다
+                </div>
+            </div>
+            <div class="adv-section">
+                <div class="adv-section-title"><i class="bi bi-layers"></i>매수 방식</div>
+                <div class="adv-btn-group" id="buyTypeGroup">
+                    <button class="adv-toggle active" data-val="일괄매수" onclick="toggleAdv('buyTypeGroup',this)">일괄 매수</button>
+                    <button class="adv-toggle" data-val="2회 분할매수" onclick="toggleAdv('buyTypeGroup',this)">2회 분할</button>
+                    <button class="adv-toggle" data-val="3회 분할매수" onclick="toggleAdv('buyTypeGroup',this)">3회 분할</button>
+                </div>
+            </div>
+            <div class="adv-section">
+                <div class="adv-section-title"><i class="bi bi-chat-left-text"></i>최근 이슈 / 추가 정보 (선택)</div>
+                <textarea id="extraInfo" class="adv-textarea" rows="3"
+                    placeholder="예) 다음달 실적 발표 예정, 최근 대규모 수주 공시, 섹터 전반 약세 등"></textarea>
+            </div>
+            <div id="advisorContent">
+                <div style="text-align:center;padding:32px 0;color:var(--fg-3);font-size:0.82rem;">
+                    <i class="bi bi-lightbulb" style="font-size:1.8rem;display:block;margin-bottom:10px;color:var(--accent);opacity:0.4;"></i>
+                    종목 검색 후 분석 버튼을 누르세요.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
+
+    <div class="index-bar" id="indexBar">
+        <div style="font-size:0.7rem;color:var(--fg-3);font-family:var(--font-mono);">로딩 중...</div>
+    </div>
+
+    <div class="main-wrapper">
+        <nav class="navbar navbar-expand-lg fixed-top navbar-top px-3">
+            <div class="container-fluid px-0">
+                <div class="d-flex align-items-center gap-2">
+                    <button class="toggle-btn d-lg-none" onclick="toggleSidebar()">
+                        <i class="bi bi-list"></i>
+                    </button>
+                    <span class="page-title">{% block page_name %}실시간 주식 현황{% endblock %}</span>
+                </div>
+                <div class="ms-auto d-flex align-items-center gap-2">
+                    <a href="http://localhost:5000/" class="add-btn" style="text-decoration:none;">
+                        <i class="bi bi-wallet2"></i> 가계부
+                    </a>
+                </div>
+            </div>
+        </nav>
+
+        <main class="container-fluid main-content">
+            <div class="row justify-content-center">
+                <div class="col-12 col-xl-10">
+                    {% block content %}{% endblock %}
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <nav class="navbar fixed-bottom d-lg-none bottom-tab">
+        <div class="container-fluid px-2">
+            <div class="row w-100 text-center g-0">
+                <div class="col">
+                    <a href="/stock_live" class="bottom-tab-link {% if request.path == '/stock_live' %}active-tab{% endif %}">
+                        <i class="bi bi-graph-up-arrow"></i>
+                        <div>시세</div>
+                    </a>
+                </div>
+                <div class="col">
+                    <a href="http://localhost:5000/" class="bottom-tab-link">
+                        <i class="bi bi-wallet2"></i>
+                        <div>가계부</div>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="confirm-modal-backdrop" id="logoutModal">
+        <div class="confirm-modal">
+            <div class="modal-icon danger"><i class="bi bi-box-arrow-right" style="color:#f87171"></i></div>
+            <h6>로그아웃 하시겠어요?</h6>
+            <p>현재 세션이 종료되고<br>로그인 페이지로 이동합니다.</p>
+            <div class="modal-btns">
+                <button class="btn-cancel" onclick="closeModal('logoutModal')">취소</button>
+                <button class="btn-confirm danger" onclick="location.href='/auth/logout'">로그아웃</button>
+            </div>
+        </div>
+    </div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+
+// ── 테마 토글 ──
+function _isDark() {
+    return document.documentElement.getAttribute('data-theme') === 'dark';
+}
+
+function updateThemeUI() {
+    const dark  = _isDark();
+    const icon  = document.getElementById('themeMenuIcon');
+    const label = document.getElementById('themeMenuLabel');
+    const pill  = document.getElementById('themePill');
+    const thumb = document.getElementById('themeThumb');
+    if (icon)  icon.className = dark ? 'bi bi-moon-stars' : 'bi bi-brightness-high';
+    if (label) label.textContent = dark ? '다크 모드' : '라이트 모드';
+    if (pill)  pill.style.background = dark ? 'var(--accent)' : 'var(--line-2)';
+    if (thumb) thumb.style.left = dark ? '15px' : '2px';
+}
+
+function toggleTheme(e) {
+    if (e) e.stopPropagation();
+    const next = _isDark() ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('theme', next);
+    updateThemeUI();
+}
+
+document.addEventListener('DOMContentLoaded', updateThemeUI);
+
+// ── 시장 지수 ──
+async function loadMarketIndices() {
+    try {
+        const res     = await fetch('/market-indices');
+        const indices = await res.json();
+        const COMMODITY_NAMES = ['금','은','WTI유'];
+        const FX_NAMES        = ['달러','유로','엔화'];
+        const stocks      = indices.filter(d => !COMMODITY_NAMES.includes(d.name) && !FX_NAMES.includes(d.name));
+        const commodities = indices.filter(d =>  COMMODITY_NAMES.includes(d.name));
+        const fx          = indices.filter(d =>  FX_NAMES.includes(d.name));
+        const renderItem  = (d, showChg=true) => {
+            const cls      = d.change > 0 ? 'up' : d.change < 0 ? 'down' : 'flat';
+            const sign     = d.change > 0 ? '+' : '';
+            const priceStr = d.unit === '₩'
+                ? d.price.toLocaleString('ko-KR', {maximumFractionDigits:2})
+                : d.price.toLocaleString('en-US', {maximumFractionDigits:2});
+            const suffix = d.unit && d.unit !== '₩' ? ' ' + d.unit : '';
+            return `<div class="index-item">
+                <span class="index-name">${d.name}</span>
+                <span class="index-price">${priceStr}${suffix}${d.unit==='₩'?'원':''}</span>
+                ${showChg?`<span class="index-chg ${cls}">${sign}${d.change.toFixed(2)}%</span>`:''}
+            </div>`;
+        };
+        document.getElementById('indexBar').innerHTML =
+            stocks.map(d=>renderItem(d,true)).join('') +
+            (commodities.length ? '<div class="index-divider"></div>' + commodities.map(d=>renderItem(d,true)).join('') : '') +
+            (fx.length          ? '<div class="index-divider"></div>' + fx.map(d=>renderItem(d,false)).join('') : '');
+    } catch(e) {
+        document.getElementById('indexBar').innerHTML = '<div style="font-size:0.7rem;color:var(--fg-3);font-family:var(--font-mono);">로드 실패</div>';
+    }
+}
+loadMarketIndices();
+setInterval(loadMarketIndices, 60000);
+
+// ── 사이드바 ──
+function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('active');
+    document.getElementById('overlay').classList.toggle('active');
+}
+
+function toggleSessionMenu() {
+    const menu = document.getElementById('sessionMenu');
+    const card = document.getElementById('userCard');
+    if (!menu || !card) return;
+    menu.classList.toggle('open');
+    card.classList.toggle('open');
+}
+
+document.addEventListener('click', e => {
+    const card = document.getElementById('userCard');
+    const menu = document.getElementById('sessionMenu');
+    if (!card || !menu) return;
+    if (!card.contains(e.target) && !menu.contains(e.target))
+        menu.classList.remove('open'), card.classList.remove('open');
+});
+
+function showModal(type) {
+    const menu = document.getElementById('sessionMenu');
+    const card = document.getElementById('userCard');
+    if (menu) menu.classList.remove('open');
+    if (card) card.classList.remove('open');
+    if (type === 'logout') document.getElementById('logoutModal').classList.add('show');
+}
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+document.querySelectorAll('.confirm-modal-backdrop').forEach(el => {
+    el.addEventListener('click', e => { if (e.target === el) el.classList.remove('show'); });
+});
+
+// ── 어드바이저 ──
+let _advisorCode='', _advisorName='', _advisorTimer=null;
+
+function openAdvisor() {
+    document.getElementById('advisorPanel').classList.add('open');
+    document.getElementById('advisorOverlay').classList.add('open');
+    document.getElementById('advisorInput').focus();
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar && window.innerWidth < 992) sidebar.classList.remove('active');
+}
+function closeAdvisor() {
+    document.getElementById('advisorPanel').classList.remove('open');
+    document.getElementById('advisorOverlay').classList.remove('open');
+}
+async function advisorSearch() {
+    const q  = document.getElementById('advisorInput').value.trim();
+    const dd = document.getElementById('advisorDropdown');
+    clearTimeout(_advisorTimer);
+    _advisorCode = '';
+    if (!q) { dd.style.display = 'none'; return; }
+    if (/^\d{6}$/.test(q)) { _advisorCode = q; _advisorName = q; dd.style.display = 'none'; return; }
+    _advisorTimer = setTimeout(async () => {
+        try {
+            const res  = await fetch('/search-stock-kr?q=' + encodeURIComponent(q));
+            const list = await res.json();
+            if (!list.length) { dd.style.display = 'none'; return; }
+            dd.innerHTML = list.map(s =>
+                `<div class="advisor-dropdown-item" onclick="pickAdvisorStock('${s.code}','${s.name}')">
+                    <b style="color:var(--fg-1);">${s.name}</b>
+                    <span style="font-size:0.68rem;color:var(--fg-3);margin-left:6px;font-family:var(--font-mono);">${s.code}</span>
+                    <span style="font-size:0.66rem;color:var(--fg-3);float:right;font-family:var(--font-mono);">${s.market}</span>
+                </div>`
+            ).join('');
+            dd.style.display = 'block';
+        } catch(e) {}
+    }, 280);
+}
+function pickAdvisorStock(code, name) {
+    _advisorCode = code; _advisorName = name;
+    document.getElementById('advisorInput').value = name + ' (' + code + ')';
+    document.getElementById('advisorDropdown').style.display = 'none';
+    document.getElementById('advisorSelectedBadge').style.display = '';
+    document.getElementById('advisorSelectedLabel').textContent = name + ' · ' + code;
+}
+document.addEventListener('click', e => {
+    if (!e.target.closest('#advisorInput') && !e.target.closest('#advisorDropdown'))
+        document.getElementById('advisorDropdown').style.display = 'none';
+});
+function toggleAdv(groupId, btn) {
+    document.querySelectorAll('#'+groupId+' .adv-toggle').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+}
+function toggleHoldForm(show) { document.getElementById('holdForm').style.display = show?'':'none'; }
+function getAdvisorUserInput() {
+    const period   = document.querySelector('#periodGroup .adv-toggle.active')?.dataset.val || '중기(1~3개월)';
+    const holdType = document.querySelector('#holdGroup .adv-toggle.active')?.dataset.val  || '미보유';
+    const buyType  = document.querySelector('#buyTypeGroup .adv-toggle.active')?.dataset.val || '일괄매수';
+    const stopLoss = document.getElementById('stopLossSlider')?.value || '10';
+    const extra    = document.getElementById('extraInfo')?.value.trim() || '';
+    const holding  = {};
+    if (holdType === '보유중') {
+        const avg = parseInt(document.getElementById('avgPrice')?.value);
+        const qty = parseInt(document.getElementById('holdQty')?.value);
+        if (avg > 0) holding.avg_price = avg;
+        if (qty > 0) holding.quantity  = qty;
+    }
+    return { period, hold_type: holdType, holding, stop_loss_pct: parseInt(stopLoss), buy_type: buyType, extra };
+}
+async function runAdvisor() {
+    const raw = document.getElementById('advisorInput').value.trim();
+    let code = _advisorCode, name = _advisorName;
+    if (!code && raw) {
+        try {
+            const r = await fetch('/search-stock-kr?q=' + encodeURIComponent(raw));
+            const list = await r.json();
+            if (list.length) { pickAdvisorStock(list[0].code, list[0].name); code = list[0].code; name = list[0].name; }
+        } catch(e) {}
+    }
+    if (!code) {
+        document.getElementById('advisorContent').innerHTML =
+            '<div style="color:#fbbf24;padding:14px;font-size:0.82rem;font-family:var(--font-mono);">종목을 검색해서 선택하거나 6자리 코드를 입력하세요.</div>';
+        return;
+    }
+    const userInput = getAdvisorUserInput();
+    const btn = document.getElementById('advisorRunBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="advisor-spinner" style="width:14px;height:14px;border-width:2px;vertical-align:middle;display:inline-block;margin:0;"></span>';
+    const el = () => document.getElementById('advisorContent');
+    el().innerHTML = '<div class="advisor-loading"><div class="advisor-spinner"></div><br>' + name + ' 데이터 수집 중...</div>';
+    let analysisText = '', metaData = null;
+    try {
+        const res = await fetch('/stock/advisor/stream', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ code, name, user_input: userInput }),
+        });
+        if (!res.ok) throw new Error('서버 오류: ' + res.status);
+        const reader = res.body.getReader(), decoder = new TextDecoder();
+        let buf = '';
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split('\n'); buf = lines.pop();
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                let ev; try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+                if (ev.type === 'progress') {
+                    el().innerHTML = '<div class="advisor-loading"><div class="advisor-spinner"></div><br>' + ev.msg + '</div>';
+                } else if (ev.type === 'start') {
+                    analysisText = ''; el().innerHTML = '<div class="advisor-result" id="streamBox"></div>';
+                } else if (ev.type === 'text') {
+                    analysisText += ev.chunk;
+                    const box = document.getElementById('streamBox');
+                    if (box) box.innerHTML = escHtml(analysisText) +
+                        '<span style="display:inline-block;width:2px;height:1em;background:var(--accent);vertical-align:text-bottom;animation:blink .7s step-end infinite;"></span>';
+                } else if (ev.type === 'meta') {
+                    metaData = ev;
+                } else if (ev.type === 'error') {
+                    el().innerHTML = '<div style="color:#f87171;padding:14px;font-size:0.82rem;">' + ev.msg + '</div>'; return;
+                } else if (ev.type === 'done') {
+                    const kw = metaData?.kiwoom||{}, yf = metaData?.yfinance||{}, ui = userInput;
+                    const chips = [];
+                    if (kw.price)        chips.push('현재가 ' + Number(kw.price).toLocaleString() + '원');
+                    if (kw.rate != null) chips.push((kw.rate>=0?'+':'') + kw.rate.toFixed(2) + '%');
+                    if (kw.per)          chips.push('PER ' + kw.per + 'x');
+                    if (yf.rsi)          chips.push('RSI ' + yf.rsi);
+                    chips.push(ui.period); chips.push('손실한도 -' + ui.stop_loss_pct + '%');
+                    if (ui.hold_type==='보유중' && ui.holding?.avg_price)
+                        chips.push('평균단가 ' + Number(ui.holding.avg_price).toLocaleString() + '원');
+                    chips.push(ui.buy_type);
+                    el().innerHTML =
+                        '<div class="advisor-meta">' + chips.map(c=>'<span class="advisor-chip">'+c+'</span>').join('') + '</div>' +
+                        '<div class="advisor-result">' + escHtml(analysisText) + '</div>' +
+                        '<div style="margin-top:10px;font-size:0.68rem;color:var(--fg-3);text-align:right;font-family:var(--font-mono);">' +
+                        '분석 완료 (Opus 4.7 · Adaptive Thinking) · ' + new Date().toLocaleTimeString('ko-KR') + '</div>';
+                }
+            }
+        }
+    } catch(e) {
+        el().innerHTML = '<div style="color:#f87171;padding:14px;font-size:0.82rem;">서버 연결 실패: ' + e.message + '</div>';
+    } finally {
+        btn.disabled = false; btn.innerHTML = '분석';
+    }
+}
+function escHtml(str) { return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── 키움 API ──
+async function checkKiwoomStatus() {
+    try {
+        const res = await fetch('/kiwoom/status'), data = await res.json();
+        const btn = document.getElementById('kiwoomMenuBtn'), lbl = document.getElementById('kiwoomMenuLabel');
+        if (!btn || !lbl) return;
+        if (data.connected) { lbl.textContent = '키움 API 연결됨'; btn.style.color = 'var(--accent)'; }
+        else { lbl.textContent = '키움 API 연결'; btn.style.color = ''; }
+    } catch(e) {}
+}
+async function handleKiwoomLogin() {
+    const btn = document.getElementById('kiwoomMenuBtn'), lbl = document.getElementById('kiwoomMenuLabel');
+    const menu = document.getElementById('sessionMenu'), card = document.getElementById('userCard');
+    if (menu) menu.classList.remove('open');
+    if (card) card.classList.remove('open');
+    try {
+        const s = await fetch('/kiwoom/status'), sd = await s.json();
+        if (sd.connected) { alert('키움 API가 이미 연결됨 상태입니다.'); return; }
+    } catch(e) {}
+    if (!confirm('키움 OpenAPI 로그인 팝업이 열립니다. 진행하시겠습니까?')) return;
+    if (lbl) lbl.textContent = '연결 중...';
+    if (btn) btn.disabled = true;
+    try {
+        const res = await fetch('/kiwoom/login', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok && (data.status==='ok'||data.status==='already_logged_in')) {
+            if (lbl) lbl.textContent = '키움 API 연결됨';
+            if (btn) btn.style.color = 'var(--accent)';
+            alert('키움 API 로그인에 성공했습니다.');
+        } else {
+            if (lbl) lbl.textContent = '키움 API 연결';
+            if (btn) btn.style.color = '';
+            alert('로그인 실패: ' + (data.error||'알 수 없는 오류'));
+        }
+    } catch(e) {
+        if (lbl) lbl.textContent = '키움 API 연결';
+        if (btn) btn.style.color = '';
+        alert('네트워크 오류: ' + e.message);
+    } finally { if (btn) btn.disabled = false; }
+}
+document.addEventListener('DOMContentLoaded', checkKiwoomStatus);
+
+</script>
+</body>
+</html>

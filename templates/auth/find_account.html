@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>계정 찾기 — GAGYE</title>
+  <script>(function(){ var t=localStorage.getItem('theme')||'light'; document.documentElement.setAttribute('data-theme',t); })();</script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+  <style>
+    :root{ --accent:#6aa800; --r-2:6px; --r-3:10px; }
+    [data-theme="dark"]{ --accent:#b8e63e; --bg:#0f1219; --bg-2:#161c27; --fg:#e4eaf6; --fg-3:#4a5570; --line:rgba(255,255,255,0.07); --line-2:rgba(255,255,255,0.13); }
+    [data-theme="light"]{ --bg:#f4f6fb; --bg-2:#ffffff; --fg:#0d1117; --fg-3:#7a8499; --line:rgba(0,0,0,0.07); --line-2:rgba(0,0,0,0.12); }
+    body{ background:var(--bg); color:var(--fg); font-family:'Inter',-apple-system,sans-serif; min-height:100vh; display:flex; align-items:center; justify-content:center; }
+    .auth-card{ background:var(--bg-2); border:1px solid var(--line-2); border-radius:var(--r-3); padding:32px 28px; width:100%; max-width:400px; }
+    .form-control{ background:var(--bg)!important; border-color:var(--line-2)!important; color:var(--fg)!important; border-radius:var(--r-2)!important; }
+    .form-control:focus{ border-color:var(--accent)!important; box-shadow:0 0 0 2px rgba(106,168,0,.14)!important; }
+    .btn-primary{ background:var(--accent)!important; border-color:var(--accent)!important; border-radius:var(--r-2)!important; font-weight:700!important; }
+    .result-box{ padding:14px;border-radius:var(--r-2);font-size:0.83rem;margin-top:14px; }
+    .result-ok{ background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.25);color:#4ade80; }
+    .result-err{ background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.25);color:#f87171; }
+  </style>
+</head>
+<body>
+<div class="auth-card">
+  <div style="text-align:center;margin-bottom:24px;">
+    <div style="width:36px;height:36px;background:#c6f24e;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#080b10;font-weight:800;font-size:0.9rem;margin:0 auto 10px;font-family:monospace;">주</div>
+    <h5 style="font-weight:700;margin:0;">계정 찾기</h5>
+    <p style="font-size:0.8rem;color:var(--fg-3);margin:4px 0 0;">가입한 이메일로 아이디를 확인하세요</p>
+  </div>
+
+  <div id="resultBox" style="display:none;" class="result-box"></div>
+
+  <form id="findForm" onsubmit="findAccount(event)">
+    <div style="margin-bottom:14px;">
+      <label style="font-size:0.78rem;font-weight:600;color:var(--fg-3);margin-bottom:5px;display:block;">이메일</label>
+      <input type="email" id="emailInput" class="form-control" placeholder="가입시 사용한 이메일" required>
+    </div>
+    <button type="submit" class="btn btn-primary w-100" id="findBtn">아이디 찾기</button>
+  </form>
+
+  <div style="text-align:center;margin-top:20px;font-size:0.8rem;color:var(--fg-3);">
+    <a href="/login" style="color:var(--accent);text-decoration:none;">로그인으로 돌아가기</a>
+    &nbsp;·&nbsp;
+    <a href="/register" style="color:var(--accent);text-decoration:none;">회원가입</a>
+  </div>
+</div>
+
+<script>
+async function findAccount(e) {
+  e.preventDefault();
+  const email  = document.getElementById('emailInput').value.trim();
+  const btn    = document.getElementById('findBtn');
+  const box    = document.getElementById('resultBox');
+  btn.disabled = true; btn.textContent = '조회 중...';
+
+  try {
+    const res  = await fetch('/auth/find-account', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json();
+    box.style.display = '';
+    if (res.ok && data.user_id) {
+      box.className = 'result-box result-ok';
+      box.innerHTML = `<i class="bi bi-check-circle"></i> 아이디: <strong style="font-family:monospace;">${data.user_id}</strong>`;
+    } else {
+      box.className = 'result-box result-err';
+      box.innerHTML = `<i class="bi bi-exclamation-circle"></i> ${data.error || '해당 이메일로 가입된 계정이 없습니다.'}`;
+    }
+  } catch(e) {
+    box.style.display = '';
+    box.className = 'result-box result-err';
+    box.textContent = '서버 오류: ' + e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = '아이디 찾기';
+  }
+}
+</script>
+</body>
+</html>

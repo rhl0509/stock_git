@@ -1,0 +1,470 @@
+{% extends 'stock/stock_layout.html' %}
+{% block title %}키움 조건검색 - 가계부 Pro{% endblock %}
+{% block page_name %}키움 조건검색{% endblock %}
+
+{% block content %}
+<style>
+    /* ── 안내 카드 ── */
+    .guide-card {
+        background: rgba(59,130,246,0.06); border: 1px solid rgba(59,130,246,0.18);
+        border-radius: 12px; padding: 14px 18px; margin-bottom: 20px;
+        font-size: 0.8rem; color: var(--text-2); line-height: 1.8;
+        display: flex; gap: 12px; align-items: flex-start;
+    }
+    .guide-card i { font-size: 1.1rem; color: #3b82f6; flex-shrink: 0; margin-top: 2px; }
+
+    /* ── 조건검색 컨트롤 패널 ── */
+    .control-panel {
+        background: var(--card-bg); border: 1px solid var(--card-border);
+        border-radius: var(--radius); box-shadow: var(--card-shadow);
+        padding: 22px 24px; margin-bottom: 16px;
+    }
+    .control-title {
+        font-size: 0.85rem; font-weight: 700; color: var(--text);
+        margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+    }
+    .condition-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .condition-select {
+        flex: 1; min-width: 200px; padding: 10px 14px;
+        border: 1px solid var(--card-border); border-radius: 10px;
+        font-size: 0.88rem; color: var(--text); background: var(--card-bg);
+        outline: none; cursor: pointer; transition: border-color 0.2s;
+    }
+    .condition-select:focus { border-color: var(--accent); }
+    .load-btn {
+        padding: 10px 16px; border: 1px solid var(--card-border);
+        border-radius: 10px; background: var(--card-bg); color: var(--text-2);
+        font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.15s;
+        white-space: nowrap;
+    }
+    .load-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .run-btn {
+        padding: 10px 22px; background: var(--accent); color: #fff;
+        border: none; border-radius: 10px; font-size: 0.88rem; font-weight: 700;
+        cursor: pointer; transition: opacity 0.15s; white-space: nowrap;
+        display: flex; align-items: center; gap: 6px;
+    }
+    .run-btn:hover   { opacity: 0.88; }
+    .run-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* ── 상태 배지 ── */
+    .status-row { display: flex; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+    .status-badge {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 4px 10px; border-radius: 8px; font-size: 0.72rem; font-weight: 600;
+    }
+    .badge-ok     { background: rgba(16,185,129,0.1); color: #10b981; }
+    .badge-warn   { background: rgba(245,158,11,0.1);  color: #f59e0b; }
+    .badge-error  { background: rgba(244,63,94,0.1);   color: #f43f5e; }
+    .badge-info   { background: rgba(59,130,246,0.1);  color: #3b82f6; }
+
+    /* ── 결과 영역 ── */
+    .result-card {
+        background: var(--card-bg); border: 1px solid var(--card-border);
+        border-radius: var(--radius); box-shadow: var(--card-shadow); overflow: hidden;
+    }
+    .result-header {
+        padding: 14px 20px; border-bottom: 1px solid var(--card-border);
+        display: flex; align-items: center; justify-content: space-between;
+        flex-wrap: wrap; gap: 8px;
+    }
+    .result-title { font-weight: 700; font-size: 0.88rem; color: var(--text); display: flex; align-items: center; gap: 8px; }
+    .result-meta  { font-size: 0.75rem; color: var(--text-3); }
+
+    /* ── 결과 테이블 ── */
+    .kf-table { width: 100%; border-collapse: collapse; }
+    .kf-table thead th {
+        padding: 10px 14px; text-align: left;
+        font-size: 0.68rem; font-weight: 700; letter-spacing: .6px;
+        text-transform: uppercase; color: var(--text-2);
+        background: var(--accent-soft); border-bottom: 1px solid var(--card-border);
+        white-space: nowrap;
+    }
+    .kf-table thead th.text-end  { text-align: right; }
+    .kf-table tbody tr { border-bottom: 1px solid var(--card-border); transition: background .12s; }
+    .kf-table tbody tr:last-child { border-bottom: none; }
+    .kf-table tbody tr:hover { background: var(--accent-soft); }
+    .kf-table tbody td { padding: 12px 14px; font-size: 0.82rem; color: var(--text); }
+    .kf-table tbody td.text-end { text-align: right; }
+
+    .stock-nm { font-weight: 700; color: var(--text); }
+    .stock-cd { font-size: 0.66rem; color: var(--text-3); font-family: monospace; margin-top: 2px; }
+
+    /* ── 수치 색상 ── */
+    .pos { color: #f43f5e !important; }
+    .neg { color: #3b82f6 !important; }
+
+    /* ── 가격 출처 배지 ── */
+    .src-tag {
+        font-size: 0.6rem; font-weight: 700; padding: 1px 5px;
+        border-radius: 4px; margin-left: 4px; vertical-align: middle;
+    }
+    .src-nxt   { background: rgba(16,185,129,0.12); color: #10b981; }
+    .src-krx   { background: rgba(55,65,81,0.08);   color: #9ca3af; }
+    .src-close { background: rgba(156,163,175,0.1); color: #d1d5db; }
+
+    /* ── 진행 바 ── */
+    .progress-wrap {
+        margin-top: 14px; display: none;
+    }
+    .progress-bar-bg {
+        width: 100%; height: 5px; background: var(--card-border);
+        border-radius: 99px; overflow: hidden;
+    }
+    .progress-bar {
+        height: 100%; background: var(--accent); border-radius: 99px;
+        transition: width 0.4s ease; width: 0%;
+    }
+    .progress-text { font-size: 0.72rem; color: var(--text-3); margin-top: 6px; }
+
+    /* ── 로딩 / 빈 상태 ── */
+    .loading-box { padding: 60px; text-align: center; color: var(--text-3); }
+    .spinner {
+        width: 28px; height: 28px; border: 3px solid var(--card-border);
+        border-top-color: var(--accent); border-radius: 50%;
+        animation: spin .7s linear infinite; display: inline-block; vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .empty-box { padding: 60px; text-align: center; color: var(--text-3); }
+    .empty-box i { font-size: 2.2rem; display: block; margin-bottom: 10px; opacity: .3; }
+
+    /* ── 다크모드 ── */
+    body.dark-mode .condition-select { background: #1e293b !important; border-color: rgba(255,255,255,0.08) !important; }
+    body.dark-mode .kf-table thead th { background: #1e293b !important; }
+</style>
+
+<div style="padding: 20px 0 60px;">
+
+    <!-- ── 페이지 헤더 ── -->
+    <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+            <h4 style="font-weight:800;font-size:1.3rem;color:var(--text);margin:0;">키움 조건검색</h4>
+            <p style="font-size:0.78rem;color:var(--text-3);margin-top:4px;">
+                HTS에 저장된 조건식으로 KOSPI/KOSDAQ 전체 종목을 실시간으로 스크리닝합니다
+            </p>
+        </div>
+    </div>
+
+    <!-- ── 사용 안내 ── -->
+    <div class="guide-card">
+        <i class="bi bi-info-circle-fill"></i>
+        <div>
+            <b style="color:var(--text);">사용 방법</b><br>
+            ① 키움 HTS(영웅문) → <b>조건검색</b> 메뉴에서 원하는 조건식을 만들고 저장합니다.<br>
+            ② 아래 <b>조건식 목록 불러오기</b> 버튼을 클릭합니다.<br>
+            ③ 원하는 조건식을 선택하고 <b>검색 실행</b>을 클릭합니다.<br>
+            <span style="color:var(--text-3);font-size:0.75rem;">
+                ※ 종목당 0.4초 TR 딜레이 적용 · 최대 30개 종목 가격 조회
+            </span>
+        </div>
+    </div>
+
+    <!-- ── 컨트롤 패널 ── -->
+    <div class="control-panel">
+        <div class="control-title">
+            <i class="bi bi-sliders"></i>조건검색 설정
+        </div>
+
+        <div class="condition-row">
+            <select class="condition-select" id="conditionSelect">
+                <option value="">── 먼저 목록을 불러오세요 ──</option>
+            </select>
+            <button class="load-btn" onclick="loadConditions()">
+                <i class="bi bi-arrow-clockwise me-1"></i>목록 불러오기
+            </button>
+            <button class="run-btn" id="runBtn" onclick="runCondition()" disabled>
+                <i class="bi bi-play-fill"></i>검색 실행
+            </button>
+        </div>
+
+        <!-- 상태 표시 -->
+        <div class="status-row" id="statusRow" style="display:none;">
+            <span class="status-badge badge-info" id="statusBadge">
+                <i class="bi bi-circle-fill" style="font-size:0.5rem;"></i>
+                <span id="statusText">준비</span>
+            </span>
+            <span id="condCountBadge" style="font-size:0.75rem;color:var(--text-3);"></span>
+        </div>
+
+        <!-- 진행 바 -->
+        <div class="progress-wrap" id="progressWrap">
+            <div class="progress-bar-bg">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <div class="progress-text" id="progressText">종목 가격 조회 중...</div>
+        </div>
+    </div>
+
+    <!-- ── 결과 카드 ── -->
+    <div class="result-card" id="resultCard" style="display:none;">
+        <div class="result-header">
+            <div class="result-title">
+                <i class="bi bi-table"></i>
+                <span id="resultCondName">결과</span>
+            </div>
+            <div class="result-meta" id="resultMeta"></div>
+        </div>
+        <div class="table-responsive">
+            <table class="kf-table">
+                <thead>
+                    <tr>
+                        <th style="min-width:140px;">종목</th>
+                        <th class="text-end">현재가</th>
+                        <th class="text-end">전일대비</th>
+                        <th class="text-end">등락률</th>
+                        <th class="text-end">거래량</th>
+                        <th class="text-end">PER</th>
+                        <th class="text-end">PBR</th>
+                        <th class="text-end">시가총액</th>
+                        <th class="text-end">외국인소진율</th>
+                        <th class="text-end">출처</th>
+                    </tr>
+                </thead>
+                <tbody id="resultBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ── 초기 빈 상태 ── -->
+    <div class="empty-box" id="emptyState">
+        <i class="bi bi-sliders" style="opacity:0.2;"></i>
+        조건식을 선택하고 검색을 실행하면<br>결과가 여기에 표시됩니다
+    </div>
+
+    <!-- ── 지표 설명 ── -->
+    <div id="legendBox" style="display:none;margin-top:16px;padding:16px 20px;
+        background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;">
+        <div style="font-size:0.75rem;font-weight:700;color:var(--text-2);margin-bottom:10px;
+                    letter-spacing:.5px;text-transform:uppercase;">
+            <i class="bi bi-info-circle me-1"></i>컬럼 설명
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
+                    gap:8px;font-size:0.75rem;color:var(--text-2);line-height:1.7;">
+            <div><b style="color:var(--text);">현재가</b> — 세션에 따라 KRX / NXT / 종가</div>
+            <div><b style="color:var(--text);">PER</b> — 주가 ÷ EPS (낮을수록 저평가)</div>
+            <div><b style="color:var(--text);">PBR</b> — 주가 ÷ BPS (1 이하 = 장부가 이하)</div>
+            <div><b style="color:var(--text);">시가총액</b> — 단위: 백만원</div>
+            <div><b style="color:var(--text);">외국인소진율</b> — 외국인 보유 비율 (%)</div>
+            <div><b style="color:var(--text);">출처</b> — KRX(장중) / NXT(시간외) / 종가</div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+const fmtNum  = n => n != null ? Math.round(n).toLocaleString('ko-KR') : '-';
+const fmtF    = (n, d=2) => n != null && n !== 0 ? Number(n).toFixed(d) : '-';
+const fmtCap  = v => {
+    if (!v) return '-';
+    const won = v * 1_000_000;
+    if (won >= 1e12) return (won / 1e12).toFixed(1) + '조';
+    if (won >= 1e8)  return (won / 1e8).toFixed(0)  + '억';
+    return fmtNum(won);
+};
+
+// ── 상태 표시 헬퍼 ──
+function setStatus(text, cls = 'badge-info') {
+    const row  = document.getElementById('statusRow');
+    const badge= document.getElementById('statusBadge');
+    const txt  = document.getElementById('statusText');
+    row.style.display  = 'flex';
+    badge.className    = `status-badge ${cls}`;
+    txt.textContent    = text;
+}
+
+// ── 조건식 목록 불러오기 ──
+async function loadConditions() {
+    setStatus('조건식 목록 불러오는 중...', 'badge-info');
+    document.getElementById('conditionSelect').innerHTML = '<option>불러오는 중...</option>';
+    document.getElementById('runBtn').disabled = true;
+
+    try {
+        const res  = await fetch('/kiwoom/conditions');
+        const data = await res.json();
+
+        if (data.error) {
+            setStatus(data.error, 'badge-error');
+            document.getElementById('conditionSelect').innerHTML =
+                '<option value="">── 오류 발생 ──</option>';
+            return;
+        }
+
+        if (!data.conditions.length) {
+            setStatus('HTS에 저장된 조건식이 없습니다', 'badge-warn');
+            document.getElementById('conditionSelect').innerHTML =
+                '<option value="">── 조건식 없음 ──</option>';
+            return;
+        }
+
+        document.getElementById('conditionSelect').innerHTML =
+            '<option value="">── 조건식 선택 ──</option>' +
+            data.conditions.map(c =>
+                `<option value="${c.name}">${c.name}</option>`
+            ).join('');
+
+        document.getElementById('condCountBadge').textContent =
+            `총 ${data.count}개 조건식`;
+        document.getElementById('runBtn').disabled = false;
+        setStatus(`조건식 ${data.count}개 로드 완료`, 'badge-ok');
+
+    } catch (e) {
+        setStatus('서버 연결 실패', 'badge-error');
+        document.getElementById('conditionSelect').innerHTML =
+            '<option value="">── 연결 실패 ──</option>';
+    }
+}
+
+// ── 조건검색 실행 ──
+async function runCondition() {
+    const condName = document.getElementById('conditionSelect').value;
+    if (!condName) {
+        alert('조건식을 선택해주세요.');
+        return;
+    }
+
+    // UI 로딩 상태
+    document.getElementById('runBtn').disabled   = true;
+    document.getElementById('resultCard').style.display  = 'none';
+    document.getElementById('emptyState').style.display  = 'none';
+    document.getElementById('legendBox').style.display   = 'none';
+    document.getElementById('progressWrap').style.display = 'block';
+    document.getElementById('progressBar').style.width    = '0%';
+    document.getElementById('progressText').textContent   = '조건 검색 중...';
+    setStatus('검색 실행 중...', 'badge-info');
+
+    // 가짜 진행 바 (실제 진행률은 서버에서 받기 어려워 애니메이션으로 표현)
+    let fakeProgress = 0;
+    const progTimer = setInterval(() => {
+        fakeProgress = Math.min(fakeProgress + 2, 88);
+        document.getElementById('progressBar').style.width = fakeProgress + '%';
+        if (fakeProgress < 30)       document.getElementById('progressText').textContent = '조건 충족 종목 탐색 중...';
+        else if (fakeProgress < 70)  document.getElementById('progressText').textContent = '현재가 조회 중... (종목당 0.4초)';
+        else                         document.getElementById('progressText').textContent = '마무리 중...';
+    }, 300);
+
+    try {
+        const res  = await fetch('/kiwoom/condition/run', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ condition_name: condName }),
+        });
+        const data = await res.json();
+
+        clearInterval(progTimer);
+        document.getElementById('progressBar').style.width    = '100%';
+        document.getElementById('progressWrap').style.display = 'none';
+
+        if (data.error) {
+            setStatus(data.error, 'badge-error');
+            document.getElementById('emptyState').style.display = 'block';
+            document.getElementById('emptyState').innerHTML = `
+                <i class="bi bi-exclamation-triangle" style="opacity:1;color:#f59e0b;"></i>
+                ${data.error}`;
+            return;
+        }
+
+        // 결과 표시
+        document.getElementById('resultCard').style.display = '';
+        document.getElementById('legendBox').style.display  = '';
+        document.getElementById('resultCondName').textContent =
+            `"${condName}" 검색 결과`;
+        document.getElementById('resultMeta').textContent =
+            `조건 충족 ${data.code_count}개 종목 중 ${data.count}개 가격 조회 완료`;
+
+        if (!data.results.length) {
+            document.getElementById('resultBody').innerHTML = `
+                <tr><td colspan="10">
+                    <div class="empty-box">
+                        <i class="bi bi-funnel"></i>
+                        조건에 맞는 종목이 없습니다
+                    </div>
+                </td></tr>`;
+        } else {
+            renderTable(data.results);
+        }
+
+        const cntMsg = data.code_count > 30
+            ? `상위 30개 조회 (전체 ${data.code_count}개)`
+            : `${data.count}개 종목`;
+        setStatus(`검색 완료 · ${cntMsg}`, 'badge-ok');
+
+    } catch (e) {
+        clearInterval(progTimer);
+        document.getElementById('progressWrap').style.display = 'none';
+        setStatus('서버 연결 실패', 'badge-error');
+        document.getElementById('emptyState').style.display = 'block';
+        document.getElementById('emptyState').innerHTML = `
+            <i class="bi bi-exclamation-triangle" style="opacity:1;color:#f43f5e;"></i>
+            서버 연결에 실패했습니다`;
+    } finally {
+        document.getElementById('runBtn').disabled = false;
+    }
+}
+
+// ── 결과 테이블 렌더링 ──
+function renderTable(rows) {
+    document.getElementById('resultBody').innerHTML = rows.map((r, i) => {
+        const rateCls = r.rate > 0 ? 'pos' : r.rate < 0 ? 'neg' : '';
+        const chgSign = r.change > 0 ? '+' : '';
+        const rateSign= r.rate  > 0 ? '+' : '';
+
+        // 가격 출처 배지
+        const srcMap = {
+            'NXT':       '<span class="src-tag src-nxt">NXT</span>',
+            'KRX_CLOSE': '<span class="src-tag src-close">종가</span>',
+            'KRX':       '<span class="src-tag src-krx">KRX</span>',
+        };
+        const srcBadge = srcMap[r.price_source] || '';
+
+        return `
+        <tr>
+            <td>
+                <div class="stock-nm">${r.name}</div>
+                <div class="stock-cd">${r.code}</div>
+            </td>
+            <td class="text-end" style="font-family:'JetBrains Mono',monospace;font-weight:700;">
+                ₩${fmtNum(r.price)}
+            </td>
+            <td class="text-end ${rateCls}" style="font-weight:600;">
+                ${chgSign}${fmtNum(r.change)}
+            </td>
+            <td class="text-end ${rateCls}" style="font-weight:600;">
+                ${rateSign}${fmtF(r.rate)}%
+            </td>
+            <td class="text-end" style="color:var(--text-2);">
+                ${fmtNum(r.volume)}
+            </td>
+            <td class="text-end" style="font-family:'JetBrains Mono',monospace;">
+                ${r.per ? fmtF(r.per) + 'x' : '-'}
+            </td>
+            <td class="text-end" style="font-family:'JetBrains Mono',monospace;">
+                ${r.pbr ? fmtF(r.pbr) + 'x' : '-'}
+            </td>
+            <td class="text-end" style="color:var(--text-2);">
+                ${fmtCap(r.market_cap)}
+            </td>
+            <td class="text-end" style="font-family:'JetBrains Mono',monospace;">
+                ${r.foreign_ratio ? fmtF(r.foreign_ratio) + '%' : '-'}
+            </td>
+            <td class="text-end">${srcBadge}</td>
+        </tr>`;
+    }).join('');
+}
+
+// ── 자동 초기화: 로그인 상태 확인 후 조건식 자동 로드 ──
+(async () => {
+    try {
+        const res  = await fetch('/kiwoom/status');
+        const data = await res.json();
+        if (data.connected) {
+            setStatus('키움 연결됨 · 목록 불러오기를 눌러주세요', 'badge-ok');
+            document.getElementById('statusRow').style.display = 'flex';
+        } else {
+            setStatus('키움 로그인 필요', 'badge-warn');
+            document.getElementById('statusRow').style.display = 'flex';
+        }
+    } catch {}
+})();
+</script>
+{% endblock %}

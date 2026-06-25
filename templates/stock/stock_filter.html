@@ -1,0 +1,542 @@
+{% extends 'stock/stock_layout.html' %}
+{% block title %}종목 필터 - 가계부 Pro{% endblock %}
+{% block page_name %}종목 필터{% endblock %}
+
+{% block content %}
+<style>
+    /* ── 필터 칩 ── */
+    .filter-wrap { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+    .filter-chip {
+        display:inline-flex; align-items:center; gap:6px;
+        padding:7px 14px; border-radius:20px;
+        border:1.5px solid var(--card-border);
+        background:var(--card-bg); color:var(--text-2);
+        font-size:0.8rem; font-weight:600; cursor:pointer;
+        transition:all 0.18s; user-select:none;
+    }
+    .filter-chip:hover { border-color:var(--accent); color:var(--text); }
+    .filter-chip.active { background:var(--accent); color:#fff; border-color:var(--accent); box-shadow:0 2px 8px var(--accent-glow); }
+
+    /* 기술적 칩 색상 */
+    .filter-chip.strong-buy.active  { background:#10b981; border-color:#10b981; }
+    .filter-chip.strong-sell.active { background:#f43f5e; border-color:#f43f5e; }
+    .filter-chip.rsi-low.active     { background:#3b82f6; border-color:#3b82f6; }
+    .filter-chip.rsi-high.active    { background:#f59e0b; border-color:#f59e0b; }
+    .filter-chip.golden.active      { background:#f59e0b; border-color:#f59e0b; }
+    .filter-chip.dead.active        { background:#6b7280; border-color:#6b7280; }
+    .filter-chip.vol.active         { background:#8b5cf6; border-color:#8b5cf6; }
+    .filter-chip.w52h.active        { background:#ef4444; border-color:#ef4444; }
+    .filter-chip.w52l.active        { background:#06b6d4; border-color:#06b6d4; }
+
+    /* 투자자 칩 색상 */
+    .filter-chip.fbuy.active  { background:#10b981; border-color:#10b981; }
+    .filter-chip.fsell.active { background:#f43f5e; border-color:#f43f5e; }
+    .filter-chip.ibuy.active  { background:#3b82f6; border-color:#3b82f6; }
+    .filter-chip.isell.active { background:#f59e0b; border-color:#f59e0b; }
+
+    /* 섹션 구분 레이블 */
+    .filter-section-divider {
+        width:100%; display:flex; align-items:center; gap:10px;
+        margin:6px 0 2px;
+    }
+    .filter-section-divider span {
+        font-size:0.65rem; font-weight:700; letter-spacing:1.2px;
+        text-transform:uppercase; color:var(--text-3); white-space:nowrap;
+    }
+    .filter-section-divider::after {
+        content:''; flex:1; height:1px; background:var(--card-border);
+    }
+
+    /* ── 정렬 컨트롤 ── */
+    .sort-bar {
+        display:flex; align-items:center; gap:8px; padding:12px 16px;
+        background:var(--card-bg); border:1px solid var(--card-border);
+        border-radius:12px; margin-bottom:16px; flex-wrap:wrap;
+    }
+    .sort-label { font-size:0.75rem; font-weight:600; color:var(--text-2); white-space:nowrap; }
+    .sort-select {
+        padding:5px 10px; border:1px solid var(--card-border);
+        border-radius:8px; font-size:0.8rem; color:var(--text);
+        background:var(--card-bg); outline:none; cursor:pointer;
+    }
+    .dir-btn {
+        padding:5px 10px; border:1px solid var(--card-border);
+        border-radius:8px; font-size:0.78rem; font-weight:600;
+        background:var(--card-bg); color:var(--text-2); cursor:pointer; transition:all 0.15s;
+    }
+    .dir-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .result-count { margin-left:auto; font-size:0.75rem; color:var(--text-3); }
+
+    /* ── 캐시 안내 ── */
+    .cache-bar { font-size:0.72rem; color:var(--text-3); margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+    .refresh-cache-btn {
+        padding:3px 9px; border-radius:6px; border:1px solid var(--card-border);
+        background:transparent; color:var(--text-2); font-size:0.72rem; cursor:pointer; transition:all 0.15s;
+    }
+    .refresh-cache-btn:hover { background:var(--accent); color:#fff; border-color:var(--accent); }
+
+    /* ── 공통 결과 카드 ── */
+    .result-card {
+        background:var(--card-bg); border:1px solid var(--card-border);
+        border-radius:var(--radius); box-shadow:var(--card-shadow); overflow:hidden;
+    }
+
+    /* ── 기술적 테이블 ── */
+    .result-table { width:100%; border-collapse:collapse; }
+    .result-table thead th {
+        padding:10px 14px; text-align:left;
+        font-size:0.68rem; font-weight:700; letter-spacing:.6px;
+        text-transform:uppercase; color:var(--text-2);
+        background:var(--accent-soft); border-bottom:1px solid var(--card-border);
+        white-space:nowrap; cursor:pointer; user-select:none;
+    }
+    .result-table thead th:hover { color:var(--text); }
+    .result-table tbody tr { border-bottom:1px solid var(--card-border); transition:background .12s; }
+    .result-table tbody tr:last-child { border-bottom:none; }
+    .result-table tbody tr:hover { background:var(--accent-soft); }
+    .result-table tbody td { padding:12px 14px; font-size:0.82rem; color:var(--text); }
+
+    /* ── 투자자 테이블 ── */
+    .inv-table { width:100%; border-collapse:collapse; }
+    .inv-table thead th {
+        padding:10px 14px; text-align:left;
+        font-size:0.68rem; font-weight:700; letter-spacing:.6px;
+        text-transform:uppercase; color:var(--text-2);
+        background:var(--accent-soft); border-bottom:1px solid var(--card-border);
+        white-space:nowrap;
+    }
+    .inv-table tbody tr { border-bottom:1px solid var(--card-border); transition:background .12s; }
+    .inv-table tbody tr:last-child { border-bottom:none; }
+    .inv-table tbody tr:hover { background:var(--accent-soft); }
+    .inv-table tbody td { padding:12px 14px; font-size:0.82rem; color:var(--text); }
+    .inv-notice {
+        padding:10px 16px; background:rgba(245,158,11,0.06);
+        border-bottom:1px solid var(--card-border);
+        font-size:0.72rem; color:var(--text-3);
+        display:flex; align-items:center; gap:6px;
+    }
+
+    /* 공통 셀 스타일 */
+    .stock-nm { font-weight:700; color:var(--text); }
+    .stock-cd { font-size:0.66rem; color:var(--text-3); font-family:monospace; margin-top:2px; }
+    .pos { color:#f43f5e !important; }
+    .neg { color:#3b82f6 !important; }
+
+    /* ── 신호 태그 ── */
+    .tag { display:inline-block; padding:2px 7px; border-radius:5px; font-size:0.65rem; font-weight:700; margin:1px; }
+    .tag-strong-buy  { background:rgba(16,185,129,.12); color:#10b981; }
+    .tag-strong-sell { background:rgba(244,63,94,.12);  color:#f43f5e; }
+    .tag-rsi-low     { background:rgba(59,130,246,.12); color:#3b82f6; }
+    .tag-rsi-high    { background:rgba(245,158,11,.12); color:#f59e0b; }
+    .tag-golden      { background:rgba(245,158,11,.12); color:#d97706; }
+    .tag-dead        { background:rgba(107,114,128,.12);color:#6b7280; }
+    .tag-vol         { background:rgba(139,92,246,.12); color:#8b5cf6; }
+    .tag-52h         { background:rgba(239,68,68,.12);  color:#ef4444; }
+    .tag-52l         { background:rgba(6,182,212,.12);  color:#06b6d4; }
+
+    /* ── RSI 바 ── */
+    .rsi-bar-wrap { display:flex; align-items:center; gap:6px; }
+    .rsi-bar-bg { width:60px; height:5px; background:var(--card-border); border-radius:3px; flex-shrink:0; }
+    .rsi-bar    { height:100%; border-radius:3px; transition:width .3s; }
+
+    /* ── 로딩 / 빈 상태 ── */
+    .loading-box { padding:60px; text-align:center; color:var(--text-3); }
+    .spinner { width:28px; height:28px; border:3px solid var(--card-border);
+               border-top-color:var(--accent); border-radius:50%;
+               animation:spin .7s linear infinite; display:inline-block; vertical-align:middle; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .empty-box { padding:60px; text-align:center; color:var(--text-3); }
+    .empty-box i { font-size:2.2rem; display:block; margin-bottom:10px; opacity:.3; }
+
+    /* ── 다크모드 ── */
+    body.dark-mode .sort-select    { background:var(--card-bg) !important; }
+    body.dark-mode .result-table thead th { background:#1e293b !important; }
+    body.dark-mode .inv-table thead th    { background:#1e293b !important; }
+</style>
+
+<div style="padding:20px 0 60px;">
+
+    <!-- ── 페이지 헤더 ── -->
+    <div class="d-flex justify-content-between align-items-start mb-4">
+        <div>
+            <h4 style="font-weight:800;font-size:1.3rem;color:var(--text);margin:0;">종목 필터</h4>
+            <p style="font-size:0.78rem;color:var(--text-3);margin-top:4px;">
+                기술적 지표 및 투자자 동향 기반으로 관심 종목을 빠르게 찾아보세요
+            </p>
+        </div>
+        <div id="cacheInfo" class="cache-bar" style="margin-bottom:0;margin-top:6px;"></div>
+    </div>
+
+    <!-- ── 필터 칩 ── -->
+    <div class="filter-wrap" id="filterWrap">
+
+        <!-- 기술적 분석 -->
+        <div class="filter-section-divider"><span>기술적 분석</span></div>
+
+        <button class="filter-chip active" data-filter="all" data-mode="technical"
+            onclick="selectFilter(this)"><i class="bi bi-grid"></i>전체 종목</button>
+        <button class="filter-chip strong-buy" data-filter="strong_buy" data-mode="technical"
+            onclick="selectFilter(this)"><i class="bi bi-lightning-charge-fill"></i>강력 매수</button>
+        <button class="filter-chip strong-sell" data-filter="strong_sell" data-mode="technical"
+            onclick="selectFilter(this)"><i class="bi bi-exclamation-triangle-fill"></i>강력 매도</button>
+        <button class="filter-chip rsi-low" data-filter="rsi_low" data-mode="technical"
+            onclick="selectFilter(this)"><i class="bi bi-arrow-down-circle"></i>RSI 과매도 (&lt;40)</button>
+        <button class="filter-chip rsi-high" data-filter="rsi_high" data-mode="technical"
+            onclick="selectFilter(this)"><i class="bi bi-arrow-up-circle"></i>RSI 과매수 (&gt;60)</button>
+        <button class="filter-chip golden" data-filter="golden_cross" data-mode="technical"
+            onclick="selectFilter(this)"><i class="bi bi-star-fill"></i>골든크로스</button>
+        <button class="filter-chip dead" data-filter="dead_cross" data-mode="technical"
+            onclick="selectFilter(this)"><i class="bi bi-x-circle-fill"></i>데드크로스</button>
+        <button class="filter-chip vol" data-filter="volume_surge" data-mode="technical"
+            onclick="selectFilter(this)"><i class="bi bi-bar-chart-fill"></i>거래량 급등</button>
+        <button class="filter-chip w52h" data-filter="near_52w_high" data-mode="technical"
+            onclick="selectFilter(this)"><i class="bi bi-trophy-fill"></i>52주 신고가 근접</button>
+        <button class="filter-chip w52l" data-filter="near_52w_low" data-mode="technical"
+            onclick="selectFilter(this)"><i class="bi bi-arrow-down-square-fill"></i>52주 신저가 근접</button>
+
+        <!-- 투자자 동향 -->
+        <div class="filter-section-divider"><span>투자자 동향 (추정)</span></div>
+
+        <button class="filter-chip fbuy" data-filter="foreign_buy" data-mode="investor"
+            onclick="selectFilter(this)">
+            <i class="bi bi-people-fill" style="color:inherit"></i>외국인 순매수
+        </button>
+        <button class="filter-chip fsell" data-filter="foreign_sell" data-mode="investor"
+            onclick="selectFilter(this)">
+            <i class="bi bi-people-fill" style="color:inherit"></i>외국인 순매도
+        </button>
+        <button class="filter-chip ibuy" data-filter="inst_buy" data-mode="investor"
+            onclick="selectFilter(this)">
+            <i class="bi bi-bank2" style="color:inherit"></i>기관 순매수
+        </button>
+        <button class="filter-chip isell" data-filter="inst_sell" data-mode="investor"
+            onclick="selectFilter(this)">
+            <i class="bi bi-bank2" style="color:inherit"></i>기관 순매도
+        </button>
+    </div>
+
+    <!-- ── 정렬 바 (기술적 모드 전용) ── -->
+    <div class="sort-bar" id="sortBar">
+        <span class="sort-label"><i class="bi bi-sort-down me-1"></i>정렬 기준</span>
+        <select class="sort-select" id="sortBy" onchange="applySort()">
+            <option value="score">강력매수 점수</option>
+            <option value="sell_score">강력매도 점수</option>
+            <option value="rsi">RSI</option>
+            <option value="vol_ratio">거래량 비율</option>
+            <option value="price_vs_ma20">MA20 대비</option>
+            <option value="macd_hist">MACD 히스토그램</option>
+            <option value="price">현재가</option>
+        </select>
+        <button class="dir-btn active" id="btnDesc" onclick="setDir('desc')">↓ 높은순</button>
+        <button class="dir-btn"        id="btnAsc"  onclick="setDir('asc')">↑ 낮은순</button>
+        <span class="result-count" id="resultCount"></span>
+    </div>
+
+    <!-- ── 캐시 안내 ── -->
+    <div class="cache-bar" id="cacheBar" style="display:none;">
+        <i class="bi bi-clock me-1"></i>
+        <span id="cacheTime"></span>
+        <button class="refresh-cache-btn" onclick="forceRefresh()">
+            <i class="bi bi-arrow-clockwise me-1"></i>새로 분석
+        </button>
+        <small style="color:var(--text-3);">(약 10~30초 소요)</small>
+    </div>
+
+    <!-- ── 기술적 결과 테이블 ── -->
+    <div class="result-card" id="technicalCard">
+        <div class="table-responsive">
+            <table class="result-table">
+                <thead>
+                    <tr>
+                        <th style="min-width:130px;">종목</th>
+                        <th class="text-end" onclick="clickSort('price')">현재가 <span id="srt-price"></span></th>
+                        <th class="text-center" onclick="clickSort('rsi')" style="min-width:110px;">RSI(14) <span id="srt-rsi"></span></th>
+                        <th class="text-end" onclick="clickSort('price_vs_ma20')">MA20 대비 <span id="srt-price_vs_ma20"></span></th>
+                        <th class="text-end" onclick="clickSort('macd_hist')">MACD 히스토 <span id="srt-macd_hist"></span></th>
+                        <th class="text-end" onclick="clickSort('vol_ratio')">거래량 비율 <span id="srt-vol_ratio"></span></th>
+                        <th style="min-width:160px;">신호</th>
+                        <th class="text-end" onclick="clickSort('score')">매수점수 <span id="srt-score"></span></th>
+                    </tr>
+                </thead>
+                <tbody id="resultBody">
+                    <tr><td colspan="8">
+                        <div class="loading-box">
+                            <span class="spinner"></span>
+                            <p style="margin-top:12px;font-size:0.85rem;">
+                                기술적 지표 분석 중...<br>
+                                <small style="color:var(--text-3);">처음 로드 시 10~30초 소요될 수 있습니다</small>
+                            </p>
+                        </div>
+                    </td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ── 투자자 결과 테이블 (investor 모드 전용) ── -->
+    <div class="result-card" id="investorCard" style="display:none;">
+        <div class="inv-notice">
+            <i class="bi bi-info-circle-fill" style="color:#f59e0b;flex-shrink:0;"></i>
+            거래량·가격·MACD를 복합 분석한 <b>추정치</b>입니다.
+            실제 외국인/기관 체결 데이터가 아닙니다.
+            <span id="invResultCount" style="margin-left:auto;font-weight:600;color:var(--text-2);"></span>
+        </div>
+        <div class="table-responsive">
+            <table class="inv-table">
+                <thead>
+                    <tr>
+                        <th style="min-width:130px;">종목</th>
+                        <th class="text-end">현재가</th>
+                        <th class="text-end">거래량 비율</th>
+                        <th class="text-end">MA20 대비</th>
+                        <th class="text-end">MACD 히스토</th>
+                        <th style="min-width:150px;">신호</th>
+                    </tr>
+                </thead>
+                <tbody id="investorBody">
+                    <tr><td colspan="6"><div class="loading-box"><span class="spinner"></span></div></td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ── 지표 설명 ── -->
+    <div style="margin-top:16px;padding:16px 20px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;">
+        <div style="font-size:0.75rem;font-weight:700;color:var(--text-2);margin-bottom:10px;letter-spacing:.5px;text-transform:uppercase;">
+            <i class="bi bi-info-circle me-1"></i>지표 설명
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px;font-size:0.75rem;color:var(--text-2);line-height:1.7;">
+            <div><b style="color:var(--text);">RSI(14)</b> — 0~100. 30 이하 과매도, 70 이상 과매수</div>
+            <div><b style="color:var(--text);">MA20 대비</b> — 현재가와 20일 이동평균 차이(%)</div>
+            <div><b style="color:var(--text);">MACD 히스토</b> — MACD와 시그널 차이. 양수=매수 우세</div>
+            <div><b style="color:var(--text);">거래량 비율</b> — 오늘 거래량 ÷ 20일 평균 거래량</div>
+            <div><b style="color:var(--text);">골든크로스</b> — 5일선이 20일선 상향 돌파</div>
+            <div><b style="color:var(--text);">강력매수 점수</b> — RSI, MA, MACD, 거래량 복합 점수 (7점 만점)</div>
+            <div><b style="color:var(--text);">외국인 순매수 추정</b> — 거래량 급등 + 상승세 + MACD 양전환</div>
+            <div><b style="color:var(--text);">기관 순매수 추정</b> — 강력매수 신호 + MACD 양전환</div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentFilter  = 'all';
+let currentMode    = 'technical';   // 'technical' | 'investor'
+let currentSortBy  = 'score';
+let currentSortDir = 'desc';
+let cachedAt       = null;
+
+const INVESTOR_FILTERS = new Set(['foreign_buy', 'foreign_sell', 'inst_buy', 'inst_sell']);
+
+const TAG_CLASS = {
+    '강력매수':   'tag-strong-buy',
+    '강력매도':   'tag-strong-sell',
+    'RSI과매도':  'tag-rsi-low',
+    'RSI과매수':  'tag-rsi-high',
+    '골든크로스': 'tag-golden',
+    '데드크로스': 'tag-dead',
+    '거래량급등': 'tag-vol',
+    '52주신고가': 'tag-52h',
+    '52주신저가': 'tag-52l',
+};
+
+function fmtNum(n)  { return Math.round(n).toLocaleString('ko-KR'); }
+function fmtSign(n) { return (n >= 0 ? '+' : '') + n.toFixed(2); }
+
+// ── 모드 전환 ──
+function setMode(mode) {
+    currentMode = mode;
+    const isTech = mode === 'technical';
+    document.getElementById('technicalCard').style.display = isTech ? '' : 'none';
+    document.getElementById('investorCard').style.display  = isTech ? 'none' : '';
+    document.getElementById('sortBar').style.display       = isTech ? '' : 'none';
+}
+
+// ── 필터 칩 선택 ──
+function selectFilter(btn) {
+    document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = btn.dataset.filter;
+    const mode    = btn.dataset.mode || 'technical';
+    setMode(mode);
+    if (mode === 'investor') runInvestor();
+    else                     runScreen();
+}
+
+// ── 정렬 ──
+function applySort() {
+    currentSortBy = document.getElementById('sortBy').value;
+    updateSortIcons();
+    runScreen();
+}
+function setDir(dir) {
+    currentSortDir = dir;
+    document.getElementById('btnDesc').classList.toggle('active', dir === 'desc');
+    document.getElementById('btnAsc').classList.toggle('active', dir === 'asc');
+    runScreen();
+}
+function clickSort(col) {
+    if (currentSortBy === col) {
+        setDir(currentSortDir === 'desc' ? 'asc' : 'desc');
+    } else {
+        currentSortBy  = col;
+        currentSortDir = 'desc';
+        document.getElementById('sortBy').value = col;
+        document.getElementById('btnDesc').classList.add('active');
+        document.getElementById('btnAsc').classList.remove('active');
+        updateSortIcons();
+        runScreen();
+    }
+}
+function updateSortIcons() {
+    document.querySelectorAll('[id^="srt-"]').forEach(el => el.textContent = '');
+    const el = document.getElementById('srt-' + currentSortBy);
+    if (el) el.textContent = currentSortDir === 'desc' ? ' ▼' : ' ▲';
+}
+
+// ── 캐시 강제 갱신 ──
+async function forceRefresh() {
+    document.getElementById('resultBody').innerHTML =
+        '<tr><td colspan="8"><div class="loading-box"><span class="spinner"></span><p style="margin-top:12px;font-size:0.85rem;">새로 분석 중...<br><small>10~30초 소요</small></p></div></td></tr>';
+    try {
+        await fetch('/stock/screen/refresh', { method: 'POST' });
+        cachedAt = null;
+        document.getElementById('cacheBar').style.display = 'none';
+        await runScreen();
+    } catch(e) { renderError('갱신 실패'); }
+}
+
+// ── 기술적 스크리닝 ──
+async function runScreen() {
+    document.getElementById('resultCount').textContent = '조회 중...';
+    try {
+        const res  = await fetch('/stock/screen', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({
+                filter:   currentFilter,
+                sort_by:  currentSortBy,
+                sort_dir: currentSortDir,
+            }),
+        });
+        const data = await res.json();
+        if (data.error) { renderError(data.error); return; }
+
+        if (!cachedAt) cachedAt = new Date();
+        document.getElementById('cacheBar').style.display = 'flex';
+        document.getElementById('cacheTime').textContent  = `${cachedAt.toLocaleTimeString('ko-KR')} 기준 데이터`;
+        document.getElementById('resultCount').textContent = `${data.count}개 / 전체 ${data.total}개`;
+
+        renderTable(data.results);
+        updateSortIcons();
+    } catch(e) { renderError('서버 연결 실패'); }
+}
+
+// ── 투자자 동향 조회 ──
+async function runInvestor() {
+    const body = document.getElementById('investorBody');
+    body.innerHTML = '<tr><td colspan="6"><div class="loading-box"><span class="spinner"></span><p style="margin-top:10px;font-size:0.82rem;">투자자 동향 분석 중...</p></div></td></tr>';
+    document.getElementById('invResultCount').textContent = '';
+    try {
+        const res  = await fetch(`/stock/investor?type=${currentFilter}`);
+        const data = await res.json();
+        if (data.error) { renderInvestorError(data.error); return; }
+
+        const rows = data.results || [];
+        document.getElementById('invResultCount').textContent = `${rows.length}개 종목`;
+        renderInvestorTable(rows);
+    } catch(e) { renderInvestorError('서버 연결 실패'); }
+}
+
+// ── 기술적 테이블 렌더링 ──
+function renderTable(rows) {
+    if (!rows.length) {
+        document.getElementById('resultBody').innerHTML = `
+            <tr><td colspan="8"><div class="empty-box">
+                <i class="bi bi-funnel"></i>조건에 맞는 종목이 없습니다
+            </div></td></tr>`;
+        return;
+    }
+    document.getElementById('resultBody').innerHTML = rows.map(r => {
+        const rsiBg    = r.rsi < 30 ? '#3b82f6' : r.rsi > 70 ? '#f43f5e' : '#10b981';
+        const rsiPct   = Math.min(r.rsi, 100);
+        const tagHtml  = r.tags.map(t => `<span class="tag ${TAG_CLASS[t] || ''}">${t}</span>`).join('');
+        const maCls    = r.price_vs_ma20 >= 0 ? 'pos' : 'neg';
+        const macdCls  = r.macd_hist >= 0 ? 'pos' : 'neg';
+        const volCls   = r.vol_ratio >= 2 ? 'pos' : r.vol_ratio < 0.7 ? 'neg' : '';
+        const scoreW   = Math.round((r.score / 7) * 100);
+        const scoreClr = r.score >= 6 ? '#10b981' : r.score >= 4 ? '#f59e0b' : '#9ca3af';
+        return `
+        <tr>
+            <td><div class="stock-nm">${r.name}</div><div class="stock-cd">${r.code}</div></td>
+            <td class="text-end" style="font-family:'JetBrains Mono',monospace;font-weight:700;">₩${fmtNum(r.price)}</td>
+            <td class="text-center">
+                <div class="rsi-bar-wrap">
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;font-weight:700;
+                          color:${r.rsi < 30 ? '#3b82f6' : r.rsi > 70 ? '#f43f5e' : 'var(--text)'};">${r.rsi}</span>
+                    <div class="rsi-bar-bg"><div class="rsi-bar" style="width:${rsiPct}%;background:${rsiBg};"></div></div>
+                </div>
+            </td>
+            <td class="text-end ${maCls}" style="font-weight:600;">${fmtSign(r.price_vs_ma20)}%</td>
+            <td class="text-end ${macdCls}" style="font-weight:600;">${fmtSign(r.macd_hist)}</td>
+            <td class="text-end ${volCls}" style="font-weight:600;">${r.vol_ratio}×</td>
+            <td>${tagHtml || '<span style="color:var(--text-3);font-size:0.75rem;">-</span>'}</td>
+            <td class="text-end">
+                <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;">
+                    <div style="width:36px;height:5px;background:var(--card-border);border-radius:3px;overflow:hidden;">
+                        <div style="width:${scoreW}%;height:100%;background:${scoreClr};border-radius:3px;"></div>
+                    </div>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;font-weight:700;color:${scoreClr};">
+                        ${r.score}<span style="color:var(--text-3);font-size:0.7rem;">/7</span>
+                    </span>
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+// ── 투자자 테이블 렌더링 ──
+function renderInvestorTable(rows) {
+    const body = document.getElementById('investorBody');
+    if (!rows.length) {
+        body.innerHTML = `<tr><td colspan="6"><div class="empty-box">
+            <i class="bi bi-people"></i>조건에 맞는 종목이 없습니다
+        </div></td></tr>`;
+        return;
+    }
+    body.innerHTML = rows.map(r => {
+        const maCls   = r.price_vs_ma20 >= 0 ? 'pos' : 'neg';
+        const macdCls = r.macd_hist >= 0     ? 'pos' : 'neg';
+        const volCls  = r.vol_ratio >= 2     ? 'pos' : '';
+        const tagHtml = r.tags.map(t => `<span class="tag ${TAG_CLASS[t] || ''}">${t}</span>`).join('');
+        return `
+        <tr>
+            <td><div class="stock-nm">${r.name}</div><div class="stock-cd">${r.code}</div></td>
+            <td class="text-end" style="font-family:'JetBrains Mono',monospace;font-weight:700;">₩${fmtNum(r.price)}</td>
+            <td class="text-end ${volCls}"  style="font-weight:600;">${r.vol_ratio}×</td>
+            <td class="text-end ${maCls}"   style="font-weight:600;">${fmtSign(r.price_vs_ma20)}%</td>
+            <td class="text-end ${macdCls}" style="font-weight:600;">${fmtSign(r.macd_hist)}</td>
+            <td>${tagHtml || '<span style="color:var(--text-3);font-size:0.75rem;">-</span>'}</td>
+        </tr>`;
+    }).join('');
+}
+
+function renderError(msg) {
+    document.getElementById('resultBody').innerHTML = `
+        <tr><td colspan="8"><div class="empty-box">
+            <i class="bi bi-exclamation-triangle" style="color:#f59e0b;"></i>${msg}
+        </div></td></tr>`;
+    document.getElementById('resultCount').textContent = '';
+}
+
+function renderInvestorError(msg) {
+    document.getElementById('investorBody').innerHTML = `
+        <tr><td colspan="6"><div class="empty-box">
+            <i class="bi bi-exclamation-triangle" style="color:#f59e0b;"></i>${msg}
+        </div></td></tr>`;
+}
+
+// ── 초기화 ──
+updateSortIcons();
+runScreen();
+</script>
+{% endblock %}

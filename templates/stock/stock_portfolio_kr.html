@@ -1,0 +1,947 @@
+{% extends 'stock/stock_layout.html' %}
+{% block title %}국내 포트폴리오 - 가계부 Pro{% endblock %}
+{% block page_name %}주식 포트폴리오{% endblock %}
+
+{% block content %}
+<style>
+    /* ── 포트폴리오 전용 스타일 ── */
+
+    /* 포트폴리오 개요 카드 */
+    .overview-card {
+        background: var(--card-bg); border: 1px solid var(--card-border);
+        border-radius: var(--radius); box-shadow: var(--card-shadow);
+        padding: 20px 24px; margin-bottom: 12px;
+        position: relative; overflow: hidden;
+    }
+    .overview-card::after {
+        content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+        background: linear-gradient(90deg, var(--accent), transparent); opacity: 0.5;
+    }
+    .overview-cols { display: flex; align-items: stretch; flex-wrap: wrap; }
+    .overview-side {
+        flex: 1; min-width: 140px; padding: 6px 20px;
+    }
+    .overview-side:first-child { padding-left: 0; border-right: 1px solid var(--card-border); }
+    .overview-side:last-child  { padding-right: 0; border-left: 1px solid var(--card-border); text-align: right; }
+    .overview-mid {
+        display: flex; flex-direction: column; align-items: center;
+        justify-content: center; padding: 6px 20px; flex-shrink: 0; gap: 3px;
+    }
+    .overview-arrow { font-size: 0.7rem; color: var(--text-3); font-weight: 700; letter-spacing: 0.3px; margin-bottom: 2px; }
+    .overview-footer { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--card-border); font-size: 0.73rem; color: var(--text-3); }
+    @media(max-width:600px){
+        .overview-cols { flex-direction: column; gap: 12px; }
+        .overview-side { padding: 0 !important; border: none !important; text-align: left !important; }
+        .overview-mid  { padding: 4px 0; border-top: 1px dashed var(--card-border); border-bottom: 1px dashed var(--card-border); }
+    }
+
+    /* 요약 카드 2행 */
+    .summary-grid-2 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 24px; }
+    @media(max-width:768px){ .summary-grid-2 { grid-template-columns: repeat(2, 1fr); } }
+    @media(max-width:480px){ .summary-grid-2 { grid-template-columns: 1fr; } }
+
+    /* 직접입력 버튼 (원금 / 예수금 공용) */
+    .edit-kpi-btn {
+        background: none; border: none; cursor: pointer;
+        color: var(--text-3); font-size: 0.78rem; padding: 0 2px;
+        transition: color 0.15s; line-height: 1;
+    }
+    .edit-kpi-btn:hover { color: var(--accent); }
+
+    /* 기간 매매 날짜 피커 */
+    .date-picker-input {
+        background: var(--card-bg); border: 1px solid var(--card-border);
+        border-radius: 8px; padding: 5px 10px; color: var(--text);
+        font-size: 0.8rem; font-family: 'JetBrains Mono', monospace;
+        outline: none; cursor: pointer;
+    }
+    .date-picker-input:focus { border-color: var(--accent); }
+    [data-theme="dark"] .date-picker-input { background: #1e293b; border-color: rgba(255,255,255,0.1); color-scheme: dark; }
+
+    .kpi-card {
+        background: var(--card-bg);
+        border: 1px solid var(--card-border);
+        border-radius: var(--radius);
+        box-shadow: var(--card-shadow);
+        padding: 20px;
+        position: relative;
+        overflow: hidden;
+    }
+    .kpi-card::after {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0; height: 3px;
+        background: linear-gradient(90deg, var(--accent), transparent);
+        opacity: 0.5;
+    }
+    .kpi-label { font-size: 0.72rem; font-weight: 600; color: var(--text-2); letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 8px; }
+    .kpi-value { font-family: 'JetBrains Mono', monospace; font-size: 1.3rem; font-weight: 700; color: var(--text); line-height: 1; }
+    .kpi-sub { font-size: 0.75rem; color: var(--text-3); margin-top: 5px; }
+    .text-profit { color: #10b981 !important; }
+    .text-loss   { color: #f43f5e !important; }
+
+    /* 탭 */
+    .tab-group { display: flex; gap: 6px; margin-bottom: 16px; }
+    .tab-btn {
+        padding: 7px 18px; border-radius: 8px; font-size: 0.83rem; font-weight: 600;
+        border: 1px solid var(--card-border); background: var(--card-bg); color: var(--text-2);
+        cursor: pointer; transition: all 0.18s;
+    }
+    .tab-btn:hover { color: var(--text); border-color: var(--accent); }
+    .tab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+    /* 테이블 래퍼 */
+    .table-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: var(--radius); box-shadow: var(--card-shadow); overflow: hidden; }
+    .table-card-header { padding: 16px 20px; border-bottom: 1px solid var(--card-border); display: flex; justify-content: space-between; align-items: center; }
+    .table-card-header h6 { font-weight: 700; font-size: 0.92rem; color: var(--text); margin: 0; }
+
+    .holdings-table { width: 100%; border-collapse: collapse; }
+    .holdings-table thead th {
+        padding: 10px 16px; text-align: left; font-size: 0.7rem; font-weight: 700;
+        letter-spacing: 0.6px; text-transform: uppercase; color: var(--text-2);
+        background: var(--accent-soft); border-bottom: 1px solid var(--card-border);
+        white-space: nowrap;
+    }
+    .holdings-table thead th:not(:first-child) { text-align: right; }
+    .holdings-table tbody tr { border-bottom: 1px solid var(--card-border); transition: background 0.12s; }
+    .holdings-table tbody tr:last-child { border-bottom: none; }
+    .holdings-table tbody tr:hover { background: var(--accent-soft); }
+    .holdings-table tbody td { padding: 13px 16px; font-size: 0.83rem; color: var(--text); white-space: nowrap; }
+    .holdings-table tbody td:not(:first-child) { text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; }
+
+    .stock-nm { font-weight: 700; font-size: 0.85rem; color: var(--text); }
+    .stock-cd { font-size: 0.68rem; color: var(--text-3); font-family: 'JetBrains Mono', monospace; margin-top: 2px; }
+
+    .badge-buy  { background: rgba(16,185,129,0.12); color: #10b981; padding: 2px 8px; border-radius: 5px; font-size: 0.72rem; font-weight: 700; }
+    .badge-sell { background: rgba(244,63,94,0.12);  color: #f43f5e; padding: 2px 8px; border-radius: 5px; font-size: 0.72rem; font-weight: 700; }
+
+    .sell-row-btn {
+        padding: 4px 12px; background: transparent; border: 1px solid #f43f5e;
+        border-radius: 6px; color: #f43f5e; font-size: 0.72rem; font-weight: 600;
+        cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    }
+    .sell-row-btn:hover { background: rgba(244,63,94,0.08); }
+
+    .empty-box { padding: 60px 24px; text-align: center; color: var(--text-3); }
+    .empty-box .ei { font-size: 2.5rem; margin-bottom: 10px; }
+    .empty-box p { font-size: 0.85rem; line-height: 1.6; }
+
+    .loading-box { padding: 40px; text-align: center; color: var(--text-3); font-size: 0.85rem; }
+    .spinner-sm { width: 20px; height: 20px; border: 2px solid var(--card-border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* 매수/매도 모달 */
+    .trade-modal-backdrop {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+        backdrop-filter: blur(6px); z-index: 1500;
+        display: none; align-items: center; justify-content: center;
+    }
+    .trade-modal-backdrop.show { display: flex; }
+    .trade-modal {
+        background: var(--card-bg);
+        border: 1px solid var(--card-border);
+        border-radius: 20px; padding: 28px;
+        width: 420px; max-width: calc(100vw - 32px);
+        box-shadow: 0 24px 60px rgba(0,0,0,0.15);
+        animation: modalPop 0.22s ease;
+    }
+    @keyframes modalPop { from { opacity:0; transform: scale(0.96) translateY(8px); } to { opacity:1; transform: scale(1) translateY(0); } }
+
+    .trade-modal .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .trade-modal .modal-head h5 { font-weight: 700; font-size: 1.05rem; color: var(--text); margin: 0; }
+    .modal-close-btn { width: 28px; height: 28px; border-radius: 7px; border: 1px solid var(--card-border); background: transparent; color: var(--text-2); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; transition: all 0.15s; }
+    .modal-close-btn:hover { background: var(--accent-soft); color: var(--text); }
+
+    .form-label-sm { font-size: 0.72rem; font-weight: 700; color: var(--text-2); letter-spacing: 0.4px; text-transform: uppercase; margin-bottom: 5px; display: block; }
+    .form-control-sm-custom {
+        width: 100%; background: var(--card-bg); border: 1px solid var(--card-border);
+        border-radius: 9px; padding: 9px 13px; color: var(--text);
+        font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;
+        outline: none; transition: border-color 0.18s;
+    }
+    .form-control-sm-custom:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+    .form-control-sm-custom::placeholder { color: var(--text-3); font-family: 'Noto Sans KR', sans-serif; }
+
+    .price-fetch-btn {
+        padding: 9px 12px; background: var(--accent-soft); border: 1px solid var(--card-border);
+        border-radius: 9px; color: var(--accent); font-size: 0.78rem; font-weight: 600;
+        cursor: pointer; transition: all 0.15s; white-space: nowrap;
+        font-family: 'Noto Sans KR', sans-serif;
+    }
+    .price-fetch-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+    .total-preview {
+        background: var(--accent-soft); border: 1px solid var(--card-border);
+        border-radius: 10px; padding: 13px 16px;
+        display: flex; justify-content: space-between; align-items: center;
+        margin: 16px 0;
+    }
+    .total-preview .tl { font-size: 0.78rem; color: var(--text-2); font-weight: 600; }
+    .total-preview .tv { font-family: 'JetBrains Mono', monospace; font-size: 1.1rem; font-weight: 700; color: var(--text); }
+
+    .trade-btn-buy    { background: #111827; color: #fff; border: none; border-radius: 10px; padding: 11px; font-size: 0.88rem; font-weight: 700; cursor: pointer; transition: all 0.18s; flex: 1; }
+    .trade-btn-buy:hover  { background: #374151; transform: translateY(-1px); }
+    .trade-btn-sell   { background: #f43f5e; color: #fff; border: none; border-radius: 10px; padding: 11px; font-size: 0.88rem; font-weight: 700; cursor: pointer; transition: all 0.18s; flex: 1; }
+    .trade-btn-sell:hover { background: #e11d48; transform: translateY(-1px); }
+    .trade-btn-cancel { background: var(--card-bg); color: var(--text-2); border: 1px solid var(--card-border); border-radius: 10px; padding: 11px; font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: all 0.18s; flex: 1; }
+    .trade-btn-cancel:hover { background: var(--accent-soft); }
+
+    /* 토스트 */
+    .toast-box {
+        position: fixed; bottom: 28px; right: 28px;
+        background: var(--card-bg); border: 1px solid var(--card-border);
+        border-radius: 12px; padding: 13px 18px; font-size: 0.83rem; color: var(--text);
+        box-shadow: 0 8px 28px rgba(0,0,0,0.12); z-index: 3000;
+        display: none; animation: toastSlide 0.25s ease; max-width: 280px;
+    }
+    .toast-box.show    { display: block; }
+    .toast-box.success { border-left: 3px solid #10b981; }
+    .toast-box.error   { border-left: 3px solid #f43f5e; }
+    @keyframes toastSlide { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform: translateY(0); } }
+
+    /* 새로고침 버튼 */
+    .refresh-btn {
+        padding: 6px 14px; background: transparent; border: 1px solid var(--card-border);
+        border-radius: 8px; color: var(--text-2); font-size: 0.78rem; font-weight: 600;
+        cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 5px;
+        font-family: 'Noto Sans KR', sans-serif;
+    }
+    .refresh-btn:hover { background: var(--accent-soft); color: var(--text); }
+
+    /* 키움 동기화 버튼 */
+    .sync-btn {
+        padding: 6px 14px; background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.3);
+        border-radius: 8px; color: #10b981; font-size: 0.78rem; font-weight: 600;
+        cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 5px;
+        font-family: 'Noto Sans KR', sans-serif;
+    }
+    .sync-btn:hover { background: rgba(16,185,129,0.15); border-color: #10b981; }
+    .sync-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── NXT 세션 배지 ── */
+    .session-badge {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 3px 9px; border-radius: 7px;
+        font-size: 0.7rem; font-weight: 600;
+    }
+    .session-badge.nxt-pre   { background: rgba(16,185,129,0.12); color: #10b981; }
+    .session-badge.both      { background: rgba(55,65,81,0.1);    color: #374151; }
+    .session-badge.nxt-after { background: rgba(139,92,246,0.12); color: #8b5cf6; }
+    .session-badge.closed    { background: rgba(156,163,175,0.1); color: #9ca3af; }
+
+    /* ── 가격 출처 태그 ── */
+    .price-src { font-size: 0.62rem; font-weight: 700; padding: 1px 5px;
+                 border-radius: 4px; margin-left: 3px; vertical-align: middle; }
+    .price-src.nxt   { background: rgba(16,185,129,0.12); color: #10b981; }
+    .price-src.krx   { background: rgba(55,65,81,0.08);   color: #9ca3af; }
+    .price-src.close { background: rgba(156,163,175,0.1); color: #d1d5db; }
+
+    /* 다크모드 보완 */
+    [data-theme="dark"] .holdings-table thead th { background: #1e293b !important; color: var(--text-2) !important; }
+    [data-theme="dark"] .form-control-sm-custom  { background: #1e293b !important; border-color: rgba(255,255,255,0.1) !important; color: var(--text) !important; }
+    [data-theme="dark"] .total-preview { background: #0f172a !important; border-color: rgba(255,255,255,0.07) !important; }
+    [data-theme="dark"] .tab-btn { border-color: rgba(255,255,255,0.07) !important; color: var(--text-2) !important; }
+    [data-theme="dark"] .tab-btn.active { background: var(--accent) !important; color: #fff !important; }
+</style>
+
+<div class="page-tabs">
+    <a href="/stock_portfolio_kr" class="ptab {% if request.path == '/stock_portfolio_kr' %}active{% endif %}"><i class="bi bi-building"></i> 국내</a>
+    <a href="/stock_portfolio"    class="ptab {% if request.path == '/stock_portfolio' %}active{% endif %}"><i class="bi bi-globe"></i> 해외</a>
+</div>
+<!-- ── 페이지 헤더 ── -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 style="font-weight:800;font-size:1.3rem;color:var(--text);margin:0;">내 포트폴리오</h4>
+        <p style="font-size:0.78rem;color:var(--text-3);margin-top:3px;display:flex;align-items:center;gap:8px;">
+            <span id="lastUpdated">현재가 기준 자동 계산</span>
+            <span id="sessionBadge" class="session-badge closed">
+                <i class="bi bi-moon-stars"></i>로딩 중
+            </span>
+        </p>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="refresh-btn" onclick="loadAll()"><i class="bi bi-arrow-clockwise"></i> 새로고침</button>
+        <button class="sync-btn" id="syncBtn" onclick="syncFromKiwoom()"><i class="bi bi-link-45deg"></i> 키움 동기화</button>
+        <button class="trade-btn-sell" style="padding:8px 16px;border-radius:9px;font-size:0.82rem;" onclick="openSellModal()">
+            <i class="bi bi-arrow-down-short"></i> 매도
+        </button>
+        <button class="trade-btn-buy" style="padding:8px 16px;border-radius:9px;font-size:0.82rem;" onclick="openBuyModal()">
+            <i class="bi bi-arrow-up-short"></i> 매수
+        </button>
+    </div>
+</div>
+
+<!-- ── 포트폴리오 개요 (원금 → 손익 → 평가금액) ── -->
+<div class="overview-card">
+    <div class="overview-cols">
+        <!-- 내가 쓴 돈 (원금) -->
+        <div class="overview-side">
+            <div class="kpi-label">내가 쓴 돈 <span style="font-weight:400;color:var(--text-3);">투자 원금</span></div>
+            <div style="display:flex;align-items:baseline;gap:6px;">
+                <div class="kpi-value" id="kpiInvest">—</div>
+                <button class="edit-kpi-btn" onclick="editInvest()" title="직접 입력">
+                    <i class="bi bi-pencil-square"></i>
+                </button>
+            </div>
+            <div class="kpi-sub" id="kpiInvestSub">평균단가 × 보유수량</div>
+        </div>
+        <!-- 가운데: 평가 손익 -->
+        <div class="overview-mid">
+            <div class="overview-arrow">평가 손익</div>
+            <div class="kpi-value" id="kpiProfit" style="font-size:1.15rem;">—</div>
+            <div class="kpi-sub" id="kpiProfitRate">—</div>
+        </div>
+        <!-- 지금 가치 (평가금액) -->
+        <div class="overview-side">
+            <div class="kpi-label">지금 가치 <span style="font-weight:400;color:var(--text-3);">평가금액</span></div>
+            <div class="kpi-value" id="kpiAsset">—</div>
+            <div class="kpi-sub">현재가 × 보유수량</div>
+        </div>
+    </div>
+    <div class="overview-footer" id="kpiCountSub">보유종목 —</div>
+</div>
+
+<!-- ── 요약 카드 2행: 계좌 현황 ── -->
+<div class="summary-grid-2">
+    <div class="kpi-card">
+        <div class="kpi-label">예수금 <span style="font-size:0.65rem;color:var(--text-3);">현금</span></div>
+        <div style="display:flex;align-items:baseline;gap:6px;">
+            <div class="kpi-value" id="kpiDeposit">—</div>
+            <button class="edit-kpi-btn" onclick="editDeposit()" title="직접 입력">
+                <i class="bi bi-pencil-square"></i>
+            </button>
+        </div>
+        <div class="kpi-sub" id="kpiDepositSub">동기화 시 자동 · ✎ 직접 입력 가능</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">누적 실현손익</div>
+        <div class="kpi-value" id="kpiRealized">—</div>
+        <div class="kpi-sub">전체 매도 기준</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">당일 실현손익</div>
+        <div class="kpi-value" id="kpiTodayRealized">—</div>
+        <div class="kpi-sub">오늘 매도 기준</div>
+    </div>
+</div>
+
+<!-- ── 탭 ── -->
+<div class="tab-group">
+    <button class="tab-btn active" onclick="switchTab('holdings', this)">보유 주식</button>
+    <button class="tab-btn" onclick="switchTab('transactions', this)">거래 내역</button>
+    <button class="tab-btn" onclick="switchTab('daily', this)">데일리 매매</button>
+    <button class="tab-btn" onclick="switchTab('period', this)">기간 매매</button>
+</div>
+
+<!-- ── 보유 주식 ── -->
+<div id="tab-holdings">
+    <div class="table-card">
+        <div class="table-card-header">
+            <h6><i class="bi bi-briefcase me-2" style="color:var(--text-3)"></i>보유 종목</h6>
+            <span style="font-size:0.75rem;color:var(--text-3);" id="holdingCountBadge"></span>
+        </div>
+        <div id="holdingsBody">
+            <div class="loading-box"><span class="spinner-sm"></span>현재가 조회 중...</div>
+        </div>
+    </div>
+</div>
+
+<!-- ── 거래 내역 ── -->
+<div id="tab-transactions" style="display:none;">
+    <div class="table-card">
+        <div class="table-card-header">
+            <h6><i class="bi bi-clock-history me-2" style="color:var(--text-3)"></i>거래 내역</h6>
+            <span style="font-size:0.73rem;color:var(--text-3);">앱 내 매수/매도 기록 · 최근 50건
+                <span title="키움 실계좌의 외부 거래는 포함되지 않습니다. 보유 주식은 '키움 동기화'로 최신화하세요."
+                      style="cursor:help;margin-left:3px;">(?)</span>
+            </span>
+        </div>
+        <div id="transactionsBody">
+            <div class="loading-box"><span class="spinner-sm"></span>불러오는 중...</div>
+        </div>
+    </div>
+</div>
+
+<!-- ── 데일리 매매 ── -->
+<div id="tab-daily" style="display:none;">
+    <div class="table-card">
+        <div class="table-card-header">
+            <h6><i class="bi bi-calendar-day me-2" style="color:var(--text-3)"></i>데일리 매매</h6>
+            <span id="todayDateBadge" style="font-size:0.75rem;color:var(--text-3);"></span>
+        </div>
+        <div id="dailyBody">
+            <div class="loading-box"><span class="spinner-sm"></span>불러오는 중...</div>
+        </div>
+    </div>
+</div>
+
+<!-- ── 기간 매매 ── -->
+<div id="tab-period" style="display:none;">
+    <div class="table-card">
+        <div class="table-card-header">
+            <h6><i class="bi bi-calendar-range me-2" style="color:var(--text-3)"></i>기간 매매</h6>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <input type="date" id="periodDateInput" class="date-picker-input">
+                <button class="refresh-btn" onclick="loadPeriodTrades()"><i class="bi bi-search"></i> 조회</button>
+            </div>
+        </div>
+        <div id="periodBody">
+            <div class="empty-box"><div class="ei">📆</div><p>날짜를 선택하고 조회하세요.</p></div>
+        </div>
+    </div>
+</div>
+
+<!-- ── 매수 모달 ── -->
+<div class="trade-modal-backdrop" id="buyModal">
+    <div class="trade-modal">
+        <div class="modal-head">
+            <h5><i class="bi bi-arrow-up-short text-success me-1"></i>매수</h5>
+            <button class="modal-close-btn" onclick="closeTradeModal('buyModal')"><i class="bi bi-x"></i></button>
+        </div>
+        <div class="mb-3">
+            <label class="form-label-sm">종목코드</label>
+            <div class="d-flex gap-2">
+                <input type="text" class="form-control-sm-custom" id="buyCode" placeholder="예) 005930" style="flex:1">
+                <button class="price-fetch-btn" onclick="fetchPrice('buy')"><i class="bi bi-search"></i> 현재가</button>
+            </div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label-sm">종목명</label>
+            <input type="text" class="form-control-sm-custom" id="buyName" placeholder="예) 삼성전자">
+        </div>
+        <div class="row g-2 mb-2">
+            <div class="col-6">
+                <label class="form-label-sm">수량 (주)</label>
+                <input type="number" class="form-control-sm-custom" id="buyQty" placeholder="0" min="1" oninput="calcTotal('buy')">
+            </div>
+            <div class="col-6">
+                <label class="form-label-sm">단가 (원)</label>
+                <input type="number" class="form-control-sm-custom" id="buyPrice" placeholder="0" oninput="calcTotal('buy')">
+            </div>
+        </div>
+        <div class="total-preview">
+            <span class="tl">총 매수금액</span>
+            <span class="tv" id="buyTotal">0 원</span>
+        </div>
+        <div class="d-flex gap-2 mt-2">
+            <button class="trade-btn-cancel" onclick="closeTradeModal('buyModal')">취소</button>
+            <button class="trade-btn-buy" onclick="executeBuy()">매수 확인</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── 매도 모달 ── -->
+<div class="trade-modal-backdrop" id="sellModal">
+    <div class="trade-modal">
+        <div class="modal-head">
+            <h5><i class="bi bi-arrow-down-short text-danger me-1"></i>매도</h5>
+            <button class="modal-close-btn" onclick="closeTradeModal('sellModal')"><i class="bi bi-x"></i></button>
+        </div>
+        <div class="mb-3">
+            <label class="form-label-sm">종목코드</label>
+            <div class="d-flex gap-2">
+                <input type="text" class="form-control-sm-custom" id="sellCode" placeholder="예) 005930" style="flex:1">
+                <button class="price-fetch-btn" onclick="fetchPrice('sell')"><i class="bi bi-search"></i> 현재가</button>
+            </div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label-sm">종목명</label>
+            <input type="text" class="form-control-sm-custom" id="sellName" placeholder="예) 삼성전자">
+        </div>
+        <div class="row g-2 mb-2">
+            <div class="col-6">
+                <label class="form-label-sm">수량 (주)</label>
+                <input type="number" class="form-control-sm-custom" id="sellQty" placeholder="0" min="1" oninput="calcTotal('sell')">
+            </div>
+            <div class="col-6">
+                <label class="form-label-sm">단가 (원)</label>
+                <input type="number" class="form-control-sm-custom" id="sellPrice" placeholder="0" oninput="calcTotal('sell')">
+            </div>
+        </div>
+        <div class="total-preview">
+            <span class="tl">총 매도금액</span>
+            <span class="tv" id="sellTotal">0 원</span>
+        </div>
+        <div class="d-flex gap-2 mt-2">
+            <button class="trade-btn-cancel" onclick="closeTradeModal('sellModal')">취소</button>
+            <button class="trade-btn-sell" onclick="executeSell()">매도 확인</button>
+        </div>
+    </div>
+</div>
+
+<!-- 토스트 -->
+<div class="toast-box" id="toastBox"></div>
+
+<script>
+    const fmt = n => Number(n).toLocaleString('ko-KR');
+
+    // ── NXT 세션 ──
+    let currentSession = null;
+
+    async function loadSession() {
+        try {
+            const res = await fetch('/kiwoom/session');
+            if (!res.ok) return;
+            currentSession = await res.json();
+            updateSessionBadge();
+        } catch {}
+    }
+
+    function updateSessionBadge() {
+        const badge = document.getElementById('sessionBadge');
+        if (!badge || !currentSession) return;
+        const clsMap  = { NXT_PRE:'nxt-pre', BOTH:'both', NXT_AFTER:'nxt-after', CLOSED:'closed' };
+        const iconMap = { NXT_PRE:'bi-sunrise', BOTH:'bi-activity', NXT_AFTER:'bi-moon', CLOSED:'bi-moon-stars' };
+        const cls  = clsMap[currentSession.session]  || 'closed';
+        const icon = iconMap[currentSession.session] || 'bi-moon-stars';
+        badge.className = `session-badge ${cls}`;
+        badge.innerHTML = `<i class="bi ${icon}"></i>${currentSession.label}`;
+    }
+
+    // ── 토스트 ──
+    function toast(msg, type = 'success') {
+        const el = document.getElementById('toastBox');
+        el.textContent = msg;
+        el.className = `toast-box show ${type}`;
+        clearTimeout(el._t);
+        el._t = setTimeout(() => el.className = 'toast-box', 3000);
+    }
+
+    // ── 탭 전환 ──
+    function switchTab(name, btn) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('tab-holdings').style.display     = name === 'holdings'     ? '' : 'none';
+        document.getElementById('tab-transactions').style.display = name === 'transactions' ? '' : 'none';
+        document.getElementById('tab-daily').style.display        = name === 'daily'        ? '' : 'none';
+        document.getElementById('tab-period').style.display       = name === 'period'       ? '' : 'none';
+        if (name === 'transactions') loadTransactions();
+        if (name === 'daily')        loadDailyTrades();
+    }
+
+    // ── 보유 주식 ──
+    async function loadHoldings() {
+        document.getElementById('holdingsBody').innerHTML = '<div class="loading-box"><span class="spinner-sm"></span>현재가 조회 중...</div>';
+        try {
+            const res  = await fetch('/stock/holdings');
+            const data = await res.json();
+
+            if (data.error) {
+                document.getElementById('holdingsBody').innerHTML = `<div class="empty-box"><div class="ei">⚠️</div><p>${data.error}</p></div>`;
+                return;
+            }
+
+            const s = data.summary;
+            const investOverride = localStorage.getItem('invest_override');
+            if (investOverride) {
+                document.getElementById('kpiInvest').textContent    = fmt(parseInt(investOverride)) + ' 원';
+                document.getElementById('kpiInvestSub').textContent = '✎ 직접 입력값';
+            } else {
+                document.getElementById('kpiInvest').textContent    = fmt(s.total_invest) + ' 원';
+                document.getElementById('kpiInvestSub').textContent = '평균단가 × 보유수량';
+            }
+            document.getElementById('kpiAsset').textContent  = fmt(s.total_asset)  + ' 원';
+
+            const pEl = document.getElementById('kpiProfit');
+            const rEl = document.getElementById('kpiProfitRate');
+            pEl.textContent = (s.total_profit >= 0 ? '+' : '') + fmt(s.total_profit) + ' 원';
+            pEl.className   = 'kpi-value ' + (s.total_profit >= 0 ? 'text-profit' : 'text-loss');
+            rEl.textContent = (s.total_profit_rate >= 0 ? '▲ ' : '▼ ') + Math.abs(s.total_profit_rate) + '%';
+            rEl.className   = 'kpi-sub ' + (s.total_profit_rate >= 0 ? 'text-profit' : 'text-loss');
+
+            document.getElementById('kpiCountSub').textContent       = `보유종목 ${data.holdings.length}개`;
+            document.getElementById('holdingCountBadge').textContent = `총 ${data.holdings.length}종목`;
+            document.getElementById('lastUpdated').textContent = '마지막 업데이트: ' + new Date().toLocaleTimeString('ko-KR');
+            // 세션 배지 갱신
+            if (currentSession) updateSessionBadge();
+
+            if (!data.holdings.length) {
+                document.getElementById('holdingsBody').innerHTML = '<div class="empty-box"><div class="ei">📭</div><p>보유 중인 주식이 없습니다.<br>매수 버튼을 눌러 추가해보세요.</p></div>';
+                return;
+            }
+
+            document.getElementById('holdingsBody').innerHTML = `
+                <div style="overflow-x:auto;">
+                <table class="holdings-table">
+                    <thead>
+                        <tr>
+                            <th>종목</th>
+                            <th>보유수량</th>
+                            <th>평균단가</th>
+                            <th>현재가</th>
+                            <th>투자금액</th>
+                            <th>평가금액</th>
+                            <th>평가손익</th>
+                            <th>수익률</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.holdings.map(h => `
+                        <tr>
+                            <td>
+                                <div class="stock-nm">${h.name}</div>
+                                <div class="stock-cd">${h.code}</div>
+                            </td>
+                            <td>${fmt(h.quantity)} 주</td>
+                            <td>${fmt(h.avg_price)}</td>
+                            <td>
+                                ${fmt(h.current_price)}
+                                ${h.price_source === 'NXT' ? '<span class="price-src nxt">NXT</span>'
+                                  : h.price_source === 'KRX_CLOSE' ? '<span class="price-src close">종가</span>'
+                                  : '<span class="price-src krx">KRX</span>'}
+                            </td>
+                            <td>${fmt(h.invest)}</td>
+                            <td>${fmt(h.eval_amount)}</td>
+                            <td class="${h.profit >= 0 ? 'text-profit' : 'text-loss'}" style="font-weight:700;">
+                                ${h.profit >= 0 ? '+' : ''}${fmt(h.profit)}
+                            </td>
+                            <td class="${h.profit_rate >= 0 ? 'text-profit' : 'text-loss'}" style="font-weight:700;">
+                                ${h.profit_rate >= 0 ? '+' : ''}${h.profit_rate}%
+                            </td>
+                            <td>
+                                <button class="sell-row-btn" onclick="openSellModalWith('${h.code}','${h.name}',${h.current_price})">
+                                    매도
+                                </button>
+                            </td>
+                        </tr>`).join('')}
+                    </tbody>
+                </table>
+                </div>`;
+        } catch(e) {
+            document.getElementById('holdingsBody').innerHTML = '<div class="empty-box"><div class="ei">❌</div><p>데이터를 불러오지 못했습니다.</p></div>';
+        }
+    }
+
+    // ── 거래 내역 ──
+    async function loadTransactions() {
+        document.getElementById('transactionsBody').innerHTML = '<div class="loading-box"><span class="spinner-sm"></span>불러오는 중...</div>';
+        try {
+            const res  = await fetch('/stock/transactions');
+            const data = await res.json();
+
+            if (!data.length) {
+                document.getElementById('transactionsBody').innerHTML = '<div class="empty-box"><div class="ei">📋</div><p>거래 내역이 없습니다.</p></div>';
+                return;
+            }
+
+            document.getElementById('transactionsBody').innerHTML = `
+                <div style="overflow-x:auto;">
+                <table class="holdings-table">
+                    <thead>
+                        <tr>
+                            <th>종목</th>
+                            <th>구분</th>
+                            <th>수량</th>
+                            <th>단가</th>
+                            <th>총금액</th>
+                            <th>거래일시</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.map(t => `
+                        <tr>
+                            <td>
+                                <div class="stock-nm">${t.name}</div>
+                                <div class="stock-cd">${t.code}</div>
+                            </td>
+                            <td><span class="${t.type === 'buy' ? 'badge-buy' : 'badge-sell'}">${t.type === 'buy' ? '매수' : '매도'}</span></td>
+                            <td>${fmt(t.quantity)} 주</td>
+                            <td>${fmt(t.price)}</td>
+                            <td>${fmt(t.total)}</td>
+                            <td style="color:var(--text-3)">${t.traded_at}</td>
+                        </tr>`).join('')}
+                    </tbody>
+                </table>
+                </div>`;
+        } catch(e) {
+            document.getElementById('transactionsBody').innerHTML = '<div class="empty-box"><div class="ei">❌</div><p>데이터를 불러오지 못했습니다.</p></div>';
+        }
+    }
+
+    // ── 현재가 조회 ──
+    async function fetchPrice(type) {
+        const code = document.getElementById(`${type}Code`).value.trim();
+        if (!code) { toast('종목코드를 입력해주세요', 'error'); return; }
+        try {
+            const res  = await fetch(`/kiwoom/best/price/${code}`);  // NXT 세션 자동 판별
+            const data = await res.json();
+            if (data.error) { toast(data.error, 'error'); return; }
+            document.getElementById(`${type}Price`).value = data.price;
+            document.getElementById(`${type}Name`).value  = data.name;
+            calcTotal(type);
+            const srcLabel = data.price_source === 'NXT' ? ' [NXT]' : data.price_source === 'KRX_CLOSE' ? ' [종가]' : '';
+            toast(`${data.name} 현재가: ${fmt(data.price)}원${srcLabel}`);
+        } catch(e) { toast('현재가 조회 실패', 'error'); }
+    }
+
+    function calcTotal(type) {
+        const qty   = parseInt(document.getElementById(`${type}Qty`).value)   || 0;
+        const price = parseInt(document.getElementById(`${type}Price`).value) || 0;
+        document.getElementById(`${type}Total`).textContent = fmt(qty * price) + ' 원';
+    }
+
+    // ── 매수 ──
+    async function executeBuy() {
+        const code  = document.getElementById('buyCode').value.trim();
+        const name  = document.getElementById('buyName').value.trim();
+        const qty   = parseInt(document.getElementById('buyQty').value);
+        const price = parseInt(document.getElementById('buyPrice').value);
+        if (!code || !qty || !price) { toast('모든 항목을 입력해주세요', 'error'); return; }
+        try {
+            const res  = await fetch('/stock/buy', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code, name, quantity: qty, price })
+            });
+            const data = await res.json();
+            if (data.error) { toast(data.error, 'error'); return; }
+            toast(data.message);
+            closeTradeModal('buyModal');
+            loadHoldings();
+        } catch(e) { toast('매수 요청 실패', 'error'); }
+    }
+
+    // ── 매도 ──
+    async function executeSell() {
+        const code  = document.getElementById('sellCode').value.trim();
+        const name  = document.getElementById('sellName').value.trim();
+        const qty   = parseInt(document.getElementById('sellQty').value);
+        const price = parseInt(document.getElementById('sellPrice').value);
+        if (!code || !qty || !price) { toast('모든 항목을 입력해주세요', 'error'); return; }
+        try {
+            const res  = await fetch('/stock/sell', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code, name, quantity: qty, price })
+            });
+            const data = await res.json();
+            if (data.error) { toast(data.error, 'error'); return; }
+            toast(`${data.message} (수익: ${data.profit >= 0 ? '+' : ''}${fmt(data.profit)}원)`);
+            closeTradeModal('sellModal');
+            loadHoldings();
+        } catch(e) { toast('매도 요청 실패', 'error'); }
+    }
+
+    // ── 모달 ──
+    function openBuyModal() {
+        ['buyCode', 'buyName', 'buyQty', 'buyPrice'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('buyTotal').textContent = '0 원';
+        document.getElementById('buyModal').classList.add('show');
+    }
+    function openSellModal() {
+        ['sellCode', 'sellName', 'sellQty', 'sellPrice'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('sellTotal').textContent = '0 원';
+        document.getElementById('sellModal').classList.add('show');
+    }
+    function openSellModalWith(code, name, price) {
+        document.getElementById('sellCode').value  = code;
+        document.getElementById('sellName').value  = name;
+        document.getElementById('sellPrice').value = price;
+        document.getElementById('sellQty').value   = '';
+        calcTotal('sell');
+        document.getElementById('sellModal').classList.add('show');
+    }
+    function closeTradeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+    // 매수/매도 모달 배경 클릭 시 닫기
+    document.querySelectorAll('.trade-modal-backdrop').forEach(m => {
+        m.addEventListener('click', e => { if (e.target === m) m.classList.remove('show'); });
+    });
+
+    // ── 키움 실계좌 동기화 ──
+    async function syncFromKiwoom() {
+        const btn = document.getElementById('syncBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 동기화 중...';
+        try {
+            const res  = await fetch('/stock/sync', { method: 'POST' });
+            const data = await res.json();
+            if (data.error) {
+                toast(data.error, 'error');
+            } else {
+                toast(data.message);
+                if (data.deposit != null && data.deposit >= 0) {
+                    localStorage.setItem('kiwoom_deposit_cache', data.deposit);
+                    _setDeposit(data.deposit, '키움 동기화');
+                }
+                loadAll();
+            }
+        } catch(e) {
+            toast('동기화 요청 실패', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-link-45deg"></i> 키움 동기화';
+        }
+    }
+
+    // ── 예수금 ──
+    function _setDeposit(amount, label) {
+        document.getElementById('kpiDeposit').textContent    = fmt(amount) + ' 원';
+        document.getElementById('kpiDepositSub').textContent = label;
+    }
+
+    async function loadDeposit() {
+        // 수동 입력값 우선
+        const manual = localStorage.getItem('deposit_manual');
+        if (manual) { _setDeposit(parseInt(manual), '✎ 직접 입력값'); return; }
+
+        // 마지막 동기화 캐시
+        const cached = localStorage.getItem('kiwoom_deposit_cache');
+        if (cached) _setDeposit(parseInt(cached), '마지막 동기화 기준');
+
+        // 실시간 조회 시도 (32비트 서버 지원 시)
+        try {
+            const res = await fetch('/kiwoom/deposit');
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data.deposit != null) {
+                localStorage.setItem('kiwoom_deposit_cache', data.deposit);
+                _setDeposit(data.deposit, '키움 실시간');
+            }
+        } catch {}
+    }
+
+    function editDeposit() {
+        const current = localStorage.getItem('deposit_manual') || localStorage.getItem('kiwoom_deposit_cache') || '';
+        const input   = prompt('예수금(현금 보유액)을 입력하세요.\n(비워두면 자동값으로 복원됩니다)', current);
+        if (input === null) return;
+        const trimmed = input.replace(/,/g, '').trim();
+        if (trimmed === '') {
+            localStorage.removeItem('deposit_manual');
+            loadDeposit();
+            return;
+        }
+        const num = parseInt(trimmed);
+        if (isNaN(num) || num < 0) { toast('올바른 숫자를 입력해주세요.', 'error'); return; }
+        localStorage.setItem('deposit_manual', num);
+        _setDeposit(num, '✎ 직접 입력값');
+        toast('예수금이 저장되었습니다.');
+    }
+
+    // ── 투자 원금 직접 입력 ──
+    function editInvest() {
+        const current = localStorage.getItem('invest_override') || '';
+        const input   = prompt('투자 원금을 직접 입력하세요.\n(비워두면 자동 계산값으로 복원됩니다)', current);
+        if (input === null) return;
+        const trimmed = input.replace(/,/g, '').trim();
+        if (trimmed === '') {
+            localStorage.removeItem('invest_override');
+            loadHoldings();
+            return;
+        }
+        const num = parseInt(trimmed);
+        if (isNaN(num) || num < 0) { toast('올바른 숫자를 입력해주세요.', 'error'); return; }
+        localStorage.setItem('invest_override', num);
+        document.getElementById('kpiInvest').textContent    = fmt(num) + ' 원';
+        document.getElementById('kpiInvestSub').textContent = '✎ 직접 입력값';
+        toast('투자 원금이 저장되었습니다.');
+    }
+
+    // ── 실현손익 (앱 내 매수/매도 기록 기준) ──
+    async function loadRealizedPnl() {
+        try {
+            const res  = await fetch('/stock/realized-pnl');
+            const data = await res.json();
+            const tr   = data.error ? 0 : (data.total_realized || 0);
+            const td   = data.error ? 0 : (data.today_realized || 0);
+
+            const rEl = document.getElementById('kpiRealized');
+            rEl.textContent = (tr >= 0 ? '+' : '') + fmt(tr) + ' 원';
+            rEl.className   = 'kpi-value ' + (tr >= 0 ? 'text-profit' : 'text-loss');
+
+            const tEl = document.getElementById('kpiTodayRealized');
+            tEl.textContent = (td >= 0 ? '+' : '') + fmt(td) + ' 원';
+            tEl.className   = 'kpi-value ' + (td >= 0 ? 'text-profit' : 'text-loss');
+        } catch {
+            document.getElementById('kpiRealized').textContent     = '+0 원';
+            document.getElementById('kpiTodayRealized').textContent = '+0 원';
+        }
+    }
+
+    // ── 기간 매매 ──
+    function _renderTradeTable(data, bodyId) {
+        if (!data.length) {
+            document.getElementById(bodyId).innerHTML = '<div class="empty-box"><div class="ei">📋</div><p>해당 날짜의 거래 내역이 없습니다.</p></div>';
+            return;
+        }
+        document.getElementById(bodyId).innerHTML = `
+            <div style="overflow-x:auto;">
+            <table class="holdings-table">
+                <thead>
+                    <tr>
+                        <th>종목</th>
+                        <th>구분</th>
+                        <th>수량</th>
+                        <th>단가</th>
+                        <th>총금액</th>
+                        <th>거래시간</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${data.map(t => `
+                    <tr>
+                        <td>
+                            <div class="stock-nm">${t.name}</div>
+                            <div class="stock-cd">${t.code}</div>
+                        </td>
+                        <td><span class="${t.type === 'buy' ? 'badge-buy' : 'badge-sell'}">${t.type === 'buy' ? '매수' : '매도'}</span></td>
+                        <td>${fmt(t.quantity)} 주</td>
+                        <td>${fmt(t.price)}</td>
+                        <td>${fmt(t.total)}</td>
+                        <td style="color:var(--text-3)">${t.traded_at.slice(11, 19)}</td>
+                    </tr>`).join('')}
+                </tbody>
+            </table>
+            </div>`;
+    }
+
+    async function loadPeriodTrades() {
+        const dateVal = document.getElementById('periodDateInput').value;
+        if (!dateVal) { toast('날짜를 선택해주세요.', 'error'); return; }
+        document.getElementById('periodBody').innerHTML = '<div class="loading-box"><span class="spinner-sm"></span>불러오는 중...</div>';
+        // YYYY-MM-DD → YYYYMMDD
+        const d = dateVal.replace(/-/g, '');
+        try {
+            const res  = await fetch(`/kiwoom/period-trades?from=${d}&to=${d}`);
+            const json = await res.json();
+            if (json.error) { toast(json.error, 'error'); document.getElementById('periodBody').innerHTML = `<div class="empty-box"><div class="ei">❌</div><p>${json.error}</p></div>`; return; }
+            // opw00015 필드(date+time) → traded_at 형식으로 정규화
+            const trades = (json.trades || []).map(t => {
+                const dd = String(t.date || d).padStart(8, '0');
+                const tt = String(t.time || '000000').padStart(6, '0');
+                return { ...t, traded_at: `${dd.slice(0,4)}-${dd.slice(4,6)}-${dd.slice(6,8)} ${tt.slice(0,2)}:${tt.slice(2,4)}:${tt.slice(4,6)}` };
+            });
+            _renderTradeTable(trades, 'periodBody');
+        } catch {
+            document.getElementById('periodBody').innerHTML = '<div class="empty-box"><div class="ei">❌</div><p>데이터를 불러오지 못했습니다.</p></div>';
+        }
+    }
+
+    // ── 데일리 매매 ──
+    async function loadDailyTrades() {
+        document.getElementById('dailyBody').innerHTML = '<div class="loading-box"><span class="spinner-sm"></span>불러오는 중...</div>';
+        document.getElementById('todayDateBadge').textContent = new Date().toLocaleDateString('ko-KR') + ' 거래';
+        try {
+            const res  = await fetch('/stock/daily-trades');
+            const data = await res.json();
+            if (!data.length) {
+                document.getElementById('dailyBody').innerHTML = '<div class="empty-box"><div class="ei">📅</div><p>오늘 거래 내역이 없습니다.<br><small style="color:var(--text-3)">앱 내 매수/매도 기록 기준입니다.</small></p></div>';
+                return;
+            }
+            _renderTradeTable(data, 'dailyBody');
+        } catch {
+            document.getElementById('dailyBody').innerHTML = '<div class="empty-box"><div class="ei">❌</div><p>데이터를 불러오지 못했습니다.</p></div>';
+        }
+    }
+
+    function loadAll() { loadHoldings(); loadRealizedPnl(); loadDeposit(); }
+
+    // 기간 매매 날짜 기본값: 오늘
+    document.getElementById('periodDateInput').value = new Date().toISOString().slice(0, 10);
+    // Enter 키로 조회
+    document.getElementById('periodDateInput').addEventListener('keydown', e => { if (e.key === 'Enter') loadPeriodTrades(); });
+
+    loadSession();
+    setInterval(loadSession, 5 * 60_000);
+    loadAll();
+</script>
+{% endblock %}

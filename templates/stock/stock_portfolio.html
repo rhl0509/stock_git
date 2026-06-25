@@ -1,0 +1,557 @@
+{% extends 'stock/stock_layout.html' %}
+{% block title %}포트폴리오 - 가계부 Pro{% endblock %}
+{% block page_name %}내 포트폴리오{% endblock %}
+
+{% block content %}
+<style>
+    .section-card {
+        background: var(--card-bg);
+        border: 1px solid var(--card-border);
+        border-radius: var(--radius);
+        box-shadow: var(--card-shadow);
+        padding: 22px 24px;
+        margin-bottom: 16px;
+    }
+    .section-title {
+        font-weight: 700; font-size: 0.9rem; color: var(--text);
+        margin-bottom: 18px; display: flex; align-items: center; gap: 8px;
+    }
+
+    /* 요약 카드 */
+    .pf-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 16px; }
+    @media(max-width:800px){ .pf-grid { grid-template-columns: repeat(2,1fr); } }
+    .pf-kpi {
+        background: var(--card-bg); border: 1px solid var(--card-border);
+        border-radius: 14px; padding: 18px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.05);
+    }
+    .pf-label { font-size: 0.68rem; color: var(--text-3); font-weight: 600; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 6px; }
+    .pf-value { font-family: 'Outfit', sans-serif; font-size: 1.4rem; font-weight: 700; color: var(--text); }
+    .pf-value.pos { color: #f43f5e; }
+    .pf-value.neg { color: #3b82f6; }
+
+    /* 종목 추가 폼 */
+    .add-form { display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 8px; align-items: end; }
+    @media(max-width:700px){ .add-form { grid-template-columns: 1fr 1fr; } }
+    .form-field label { display: block; font-size: 0.72rem; font-weight: 600; color: var(--text-2); margin-bottom: 5px; }
+    .form-field input {
+        width: 100%; padding: 9px 12px; border: 1px solid var(--card-border);
+        border-radius: 9px; font-size: 0.88rem; color: var(--text);
+        background: var(--card-bg); outline: none; transition: border-color 0.2s;
+    }
+    .form-field input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(var(--accent-rgb),0.14); }
+    .add-holding-btn {
+        padding: 9px 18px; background: var(--accent); color: #fff; border: none;
+        border-radius: 9px; font-weight: 700; font-size: 0.85rem; cursor: pointer;
+        transition: background 0.2s; white-space: nowrap; height: fit-content;
+    }
+    .add-holding-btn:hover { background: var(--accent-2); }
+
+    /* 자동완성 */
+    .pf-input-wrap { position: relative; }
+    .pf-ac-list {
+        position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+        background: var(--card-bg); border: 1px solid var(--card-border);
+        border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+        z-index: 999; max-height: 200px; overflow-y: auto; display: none;
+    }
+    .pf-ac-list.show { display: block; }
+    .pf-ac-item {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 9px 13px; cursor: pointer; border-bottom: 1px solid var(--card-border);
+        font-size: 0.85rem; transition: background 0.1s;
+    }
+    .pf-ac-item:last-child { border-bottom: none; }
+    .pf-ac-item:hover, .pf-ac-item.active { background: var(--accent-soft); }
+    .pf-ac-name   { font-weight: 600; color: var(--text); }
+    .pf-ac-code   { font-size: 0.73rem; color: var(--text-3); font-family: monospace; }
+
+    /* 보유 종목 테이블 */
+    .holdings-table th {
+        font-size: 0.7rem; font-weight: 700; color: var(--text-2);
+        letter-spacing: .5px; background: var(--accent-soft); text-transform: uppercase;
+    }
+    .holdings-table td { font-size: 0.85rem; vertical-align: middle; color: var(--text); }
+    .symbol-cell { font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 0.9rem; color: var(--text); }
+    .symbol-sub  { font-size: 0.7rem; color: var(--text-3); margin-top: 1px; font-family: monospace; }
+    .pnl-badge { display: inline-block; padding: 3px 9px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; }
+    .pnl-badge.pos { background: #fff1f2; color: #f43f5e; }
+    .pnl-badge.neg { background: #eff6ff; color: #3b82f6; }
+    .del-btn {
+        width: 28px; height: 28px; border-radius: 7px; border: none;
+        background: transparent; color: var(--text-3); cursor: pointer;
+        display: inline-flex; align-items: center; justify-content: center; transition: all 0.15s;
+    }
+    .del-btn:hover { background: #fff1f2; color: #f43f5e; }
+
+    /* 차트 */
+    .donut-wrap { height: 220px; }
+
+    /* 로딩 */
+    .pf-loading { text-align: center; padding: 40px; color: var(--text-3); font-size: 0.85rem; }
+    .pf-spinner { width: 20px; height: 20px; border: 2px solid var(--card-border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* 토스트 */
+    .pf-toast {
+        position: fixed; bottom: 28px; right: 28px;
+        background: var(--card-bg); border: 1px solid var(--card-border);
+        border-radius: 12px; padding: 13px 18px; font-size: 0.83rem; color: var(--text);
+        box-shadow: 0 8px 28px rgba(0,0,0,0.12); z-index: 3000;
+        display: none; animation: toastSlide 0.25s ease; max-width: 280px;
+    }
+    .pf-toast.show    { display: block; }
+    .pf-toast.success { border-left: 3px solid #10b981; }
+    .pf-toast.error   { border-left: 3px solid #f43f5e; }
+    @keyframes toastSlide { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform: translateY(0); } }
+
+    /* 다크모드 */
+    [data-theme="dark"] .holdings-table th { background: var(--bg-3) !important; }
+    [data-theme="dark"] .pnl-badge.pos { background: rgba(244,63,94,0.15) !important; }
+    [data-theme="dark"] .pnl-badge.neg { background: rgba(59,130,246,0.15) !important; }
+</style>
+
+<div class="page-tabs">
+    <a href="/stock_portfolio_kr" class="ptab {% if request.path == '/stock_portfolio_kr' %}active{% endif %}"><i class="bi bi-building"></i> 국내</a>
+    <a href="/stock_portfolio"    class="ptab {% if request.path == '/stock_portfolio' %}active{% endif %}"><i class="bi bi-globe"></i> 해외</a>
+</div>
+<div style="padding: 0 0 60px;">
+
+    <!-- ── 요약 KPI ── -->
+    <div class="pf-grid">
+        <div class="pf-kpi"><div class="pf-label">총 평가액</div><div class="pf-value" id="kpiTotal">—</div></div>
+        <div class="pf-kpi"><div class="pf-label">총 투자금</div><div class="pf-value" id="kpiCost">—</div></div>
+        <div class="pf-kpi"><div class="pf-label">평가손익</div><div class="pf-value" id="kpiPnl">—</div></div>
+        <div class="pf-kpi"><div class="pf-label">수익률</div><div class="pf-value" id="kpiRate">—</div></div>
+    </div>
+
+    <!-- ── 종목 추가 폼 ── -->
+    <div class="section-card">
+        <div class="section-title"><i class="bi bi-plus-circle"></i>보유 종목 추가</div>
+        <div class="add-form">
+            <div class="form-field">
+                <label>종목명 또는 종목코드</label>
+                <div class="pf-input-wrap">
+                    <input type="text" id="pfSymbol"
+                        placeholder="삼성전자 또는 005930"
+                        oninput="pfOnInput()"
+                        onkeydown="pfOnKeydown(event)"
+                        autocomplete="off">
+                    <div class="pf-ac-list" id="pfAcList"></div>
+                </div>
+            </div>
+            <div class="form-field">
+                <label>보유 수량 (주)</label>
+                <input type="number" id="pfQty" placeholder="0" min="1" step="1">
+            </div>
+            <div class="form-field">
+                <label>평균 매입가 (원)</label>
+                <input type="text" id="pfAvgDisplay" placeholder="0"
+                    oninput="formatAvgInput(this)">
+                <input type="hidden" id="pfAvg">
+            </div>
+            <button class="add-holding-btn" onclick="addHolding()">
+                <i class="bi bi-plus-lg me-1"></i>추가
+            </button>
+        </div>
+    </div>
+
+    <!-- ── 보유 종목 테이블 + 손익 차트 ── -->
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-lg-8">
+            <div class="section-card">
+                <div class="section-title">
+                    <i class="bi bi-briefcase"></i>보유 종목
+                    <button onclick="loadHoldings()" style="margin-left:auto;padding:4px 10px;background:transparent;border:1px solid var(--card-border);border-radius:7px;font-size:0.75rem;color:var(--text-2);cursor:pointer;">
+                        <i class="bi bi-arrow-clockwise"></i> 새로고침
+                    </button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0 holdings-table">
+                        <thead>
+                            <tr>
+                                <th class="ps-3 py-3">종목</th>
+                                <th class="text-end py-3">수량</th>
+                                <th class="text-end py-3">평균매입가</th>
+                                <th class="text-end py-3">현재가</th>
+                                <th class="text-end py-3">평가액</th>
+                                <th class="text-end py-3">손익</th>
+                                <th class="text-end pe-3 py-3"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="holdingsBody">
+                            <tr><td colspan="7" class="pf-loading">
+                                <span class="pf-spinner"></span>불러오는 중...
+                            </td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── 도넛 차트 ── -->
+        <div class="col-12 col-lg-4">
+            <div class="section-card h-100">
+                <div class="section-title"><i class="bi bi-pie-chart"></i>포트폴리오 구성</div>
+                <div class="donut-wrap"><canvas id="pfDonut"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── 종목별 손익 차트 ── -->
+    <div class="section-card">
+        <div class="section-title"><i class="bi bi-graph-up"></i>종목별 평가손익</div>
+        <div style="height: 200px;"><canvas id="pnlChart"></canvas></div>
+    </div>
+
+</div>
+
+<!-- 토스트 -->
+<div class="pf-toast" id="pfToast"></div>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const COLORS = ['#f43f5e','#3b82f6','#10b981','#f59e0b','#8b5cf6','#06b6d4','#84cc16'];
+const fmt    = n => Math.abs(Math.round(n)).toLocaleString('ko-KR');
+
+let pfDonutInst   = null;
+let pfSelectedCode = null;
+let pfSelectedName = null;
+let pfAcIndex      = -1;
+let pfSearchTimer  = null;
+
+// ── 국내 주요 종목 (6자리 코드) ──
+const PF_KR_STOCKS = [
+    {name:'삼성전자',      code:'005930'}, {name:'SK하이닉스',      code:'000660'},
+    {name:'LG에너지솔루션',code:'373220'}, {name:'삼성바이오로직스',code:'207940'},
+    {name:'현대차',        code:'005380'}, {name:'셀트리온',        code:'068270'},
+    {name:'기아',          code:'000270'}, {name:'POSCO홀딩스',     code:'005490'},
+    {name:'삼성SDI',       code:'006400'}, {name:'LG화학',          code:'051910'},
+    {name:'네이버',        code:'035420'}, {name:'카카오',          code:'035720'},
+    {name:'현대모비스',    code:'012330'}, {name:'삼성물산',        code:'028260'},
+    {name:'KB금융',        code:'105560'}, {name:'신한지주',        code:'055550'},
+    {name:'하나금융지주',  code:'086790'}, {name:'우리금융지주',    code:'316140'},
+    {name:'LG전자',        code:'066570'}, {name:'한국전력',        code:'015760'},
+    {name:'에코프로비엠',  code:'247540'}, {name:'에코프로',        code:'086520'},
+    {name:'포스코퓨처엠',  code:'003670'}, {name:'LG이노텍',        code:'011070'},
+    {name:'SK이노베이션',  code:'096770'}, {name:'SK텔레콤',        code:'017670'},
+    {name:'KT',            code:'030200'}, {name:'LG유플러스',      code:'032640'},
+    {name:'카카오뱅크',    code:'323410'}, {name:'카카오페이',      code:'377300'},
+    {name:'크래프톤',      code:'259960'}, {name:'엔씨소프트',      code:'036570'},
+    {name:'넷마블',        code:'251270'}, {name:'두산에너빌리티',  code:'034020'},
+    {name:'한화에어로스페이스',code:'012450'},{name:'고려아연',     code:'010130'},
+    {name:'아모레퍼시픽',  code:'090430'}, {name:'LG생활건강',      code:'051900'},
+    {name:'삼성에스디에스',code:'018260'}, {name:'삼성전기',        code:'009150'},
+    {name:'하이브',        code:'352820'}, {name:'현대중공업',      code:'329180'},
+    {name:'HD현대',        code:'267250'}, {name:'메리츠금융지주',  code:'138040'},
+    {name:'삼성생명',      code:'032830'}, {name:'한국항공우주',    code:'047810'},
+];
+
+// ── 토스트 ──
+function toast(msg, type = 'success') {
+    const el = document.getElementById('pfToast');
+    el.textContent = msg;
+    el.className = `pf-toast show ${type}`;
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.className = 'pf-toast', 3000);
+}
+
+// ── 평균매입가 콤마 포맷 ──
+function formatAvgInput(el) {
+    let raw = el.value.replace(/[^0-9]/g, '');
+    document.getElementById('pfAvg').value = raw;
+    el.value = raw ? parseInt(raw).toLocaleString('ko-KR') : '';
+}
+
+// ── 자동완성 ──
+function pfOnInput() {
+    const val = document.getElementById('pfSymbol').value.trim();
+    pfSelectedCode = null;
+    pfSelectedName = null;
+    pfAcIndex = -1;
+
+    if (!val) { closePfAc(); return; }
+
+    // 숫자만 입력 시 코드 직접 입력 모드 (자동완성 없음)
+    if (/^\d+$/.test(val)) { closePfAc(); return; }
+
+    // 한글/영문 입력 시 로컬 목록 검색
+    const local = PF_KR_STOCKS.filter(s =>
+        s.name.includes(val) || s.code.startsWith(val)
+    );
+    showPfAc(local, val);
+
+    // 서버 검색 (kr-stocks DB)
+    clearTimeout(pfSearchTimer);
+    pfSearchTimer = setTimeout(async () => {
+        try {
+            const res = await fetch(`/search-stock-kr?q=${encodeURIComponent(val)}`);
+            if (!res.ok) return;
+            const data = await res.json(); // [{code, name}, ...]
+            const merged = [...local];
+            data.forEach(d => {
+                if (!merged.find(m => m.code === d.code)) merged.push(d);
+            });
+            showPfAc(merged, val);
+        } catch {}
+    }, 300);
+}
+
+function showPfAc(items, query) {
+    const list = document.getElementById('pfAcList');
+    if (!items.length) {
+        list.innerHTML = '<div style="padding:10px 13px;font-size:0.82rem;color:var(--text-3);">검색 결과 없음</div>';
+        list.classList.add('show');
+        return;
+    }
+    list.innerHTML = items.slice(0, 8).map(s => {
+        const hl = s.name.replace(query, `<mark style="background:none;color:var(--text);font-weight:800;">${query}</mark>`);
+        return `<div class="pf-ac-item" onclick="pfSelectAc('${s.code}','${s.name}')">
+            <span class="pf-ac-name">${hl}</span>
+            <span class="pf-ac-code">${s.code}</span>
+        </div>`;
+    }).join('');
+    list.classList.add('show');
+    pfAcIndex = -1;
+}
+
+function closePfAc() {
+    document.getElementById('pfAcList').classList.remove('show');
+    pfAcIndex = -1;
+}
+
+function pfSelectAc(code, name) {
+    pfSelectedCode = code;
+    pfSelectedName = name;
+    document.getElementById('pfSymbol').value = `${name} (${code})`;
+    closePfAc();
+    document.getElementById('pfQty').focus();
+}
+
+function pfOnKeydown(e) {
+    const items = document.getElementById('pfAcList').querySelectorAll('.pf-ac-item');
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        pfAcIndex = Math.min(pfAcIndex + 1, items.length - 1);
+        items.forEach((el, i) => el.classList.toggle('active', i === pfAcIndex));
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        pfAcIndex = Math.max(pfAcIndex - 1, -1);
+        items.forEach((el, i) => el.classList.toggle('active', i === pfAcIndex));
+    } else if (e.key === 'Enter') {
+        if (pfAcIndex >= 0 && items[pfAcIndex]) items[pfAcIndex].click();
+        else addHolding();
+    } else if (e.key === 'Escape') {
+        closePfAc();
+    }
+}
+
+document.addEventListener('click', e => {
+    if (!e.target.closest('.pf-input-wrap')) closePfAc();
+});
+
+// ── 종목 추가 ──
+async function addHolding() {
+    // 자동완성 선택 or 직접 코드 입력
+    const rawInput = document.getElementById('pfSymbol').value.trim();
+    const code     = pfSelectedCode || (/^\d{6}$/.test(rawInput) ? rawInput : null);
+    const name     = pfSelectedName || code;
+
+    if (!code) {
+        toast('종목을 선택하거나 6자리 종목코드를 직접 입력해주세요.', 'error');
+        return;
+    }
+    const qty = parseInt(document.getElementById('pfQty').value);
+    const avg = parseInt(document.getElementById('pfAvg').value);
+    if (!qty || qty <= 0) { toast('수량을 입력해주세요.', 'error'); return; }
+    if (!avg || avg <= 0) { toast('평균 매입가를 입력해주세요.', 'error'); return; }
+
+    try {
+        const res  = await fetch('/stock/buy', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ code, name, quantity: qty, price: avg }),
+        });
+        const data = await res.json();
+        if (data.error) { toast(data.error, 'error'); return; }
+        toast(data.message);
+
+        // 폼 초기화
+        document.getElementById('pfSymbol').value     = '';
+        document.getElementById('pfQty').value        = '';
+        document.getElementById('pfAvg').value        = '';
+        document.getElementById('pfAvgDisplay').value = '';
+        pfSelectedCode = null;
+        pfSelectedName = null;
+
+        loadHoldings();
+    } catch(e) {
+        toast('추가 요청 실패', 'error');
+    }
+}
+
+// ── 종목 삭제 ──
+async function removeHolding(id) {
+    if (!confirm('이 종목을 포트폴리오에서 삭제하시겠습니까?\n(거래 내역은 유지됩니다)')) return;
+    try {
+        const res  = await fetch(`/stock/holdings/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.error) { toast(data.error, 'error'); return; }
+        toast(data.message);
+        loadHoldings();
+    } catch(e) {
+        toast('삭제 요청 실패', 'error');
+    }
+}
+
+// ── 보유종목 로드 (키움 현재가 포함) ──
+async function loadHoldings() {
+    document.getElementById('holdingsBody').innerHTML =
+        '<tr><td colspan="7" class="pf-loading"><span class="pf-spinner"></span>현재가 조회 중...</td></tr>';
+    try {
+        const res  = await fetch('/stock/holdings');
+        const data = await res.json();
+        if (data.error) {
+            document.getElementById('holdingsBody').innerHTML =
+                `<tr><td colspan="7" class="pf-loading" style="color:#f43f5e;">${data.error}</td></tr>`;
+            return;
+        }
+        renderHoldings(data.holdings, data.summary);
+    } catch(e) {
+        document.getElementById('holdingsBody').innerHTML =
+            '<tr><td colspan="7" class="pf-loading" style="color:#f43f5e;">데이터를 불러오지 못했습니다.</td></tr>';
+    }
+}
+
+// ── 렌더링 ──
+function renderHoldings(holdings, summary) {
+    if (!holdings || !holdings.length) {
+        document.getElementById('holdingsBody').innerHTML =
+            '<tr><td colspan="7" class="pf-loading">보유 종목을 추가해보세요</td></tr>';
+        updateKPI(null);
+        renderDonut([]);
+        renderPnlChart([]);
+        return;
+    }
+
+    document.getElementById('holdingsBody').innerHTML = holdings.map(h => {
+        const cls = h.profit >= 0 ? 'pos' : 'neg';
+        return `
+        <tr>
+            <td class="ps-3 py-3">
+                <div class="symbol-cell">${h.name}</div>
+                <div class="symbol-sub">${h.code}</div>
+            </td>
+            <td class="text-end">${h.quantity.toLocaleString('ko-KR')}주</td>
+            <td class="text-end" style="color:var(--text-2);">${fmt(h.avg_price)}원</td>
+            <td class="text-end" style="font-family:'JetBrains Mono',monospace;font-weight:700;">${fmt(h.current_price)}원</td>
+            <td class="text-end" style="font-family:'JetBrains Mono',monospace;font-weight:700;">${fmt(h.eval_amount)}원</td>
+            <td class="text-end">
+                <span class="pnl-badge ${cls}">
+                    ${h.profit >= 0 ? '+' : '-'}${fmt(h.profit)}원
+                    (${h.profit_rate >= 0 ? '+' : ''}${h.profit_rate}%)
+                </span>
+            </td>
+            <td class="text-end pe-3">
+                <button class="del-btn" onclick="removeHolding(${h.id})" title="삭제">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        </tr>`;
+    }).join('');
+
+    updateKPI(summary);
+    renderDonut(holdings);
+    renderPnlChart(holdings);
+}
+
+// ── KPI 업데이트 ──
+function updateKPI(summary) {
+    if (!summary) {
+        ['kpiTotal','kpiCost','kpiPnl','kpiRate'].forEach(id => {
+            document.getElementById(id).textContent = '—';
+            document.getElementById(id).className = 'pf-value';
+        });
+        return;
+    }
+    document.getElementById('kpiTotal').textContent = fmt(summary.total_asset) + '원';
+    document.getElementById('kpiCost').textContent  = fmt(summary.total_invest) + '원';
+
+    const pnlEl  = document.getElementById('kpiPnl');
+    const rateEl = document.getElementById('kpiRate');
+    const p = summary.total_profit;
+    const r = summary.total_profit_rate;
+
+    pnlEl.textContent  = (p >= 0 ? '+' : '-') + fmt(p) + '원';
+    pnlEl.className    = 'pf-value ' + (p >= 0 ? 'pos' : 'neg');
+    rateEl.textContent = (r >= 0 ? '+' : '') + r + '%';
+    rateEl.className   = 'pf-value ' + (r >= 0 ? 'pos' : 'neg');
+}
+
+// ── 도넛 차트 ──
+function renderDonut(holdings) {
+    if (pfDonutInst) { pfDonutInst.destroy(); pfDonutInst = null; }
+    if (!holdings.length) return;
+    pfDonutInst = new Chart(document.getElementById('pfDonut'), {
+        type: 'doughnut',
+        data: {
+            labels:   holdings.map(h => h.name),
+            datasets: [{ data: holdings.map(h => h.eval_amount), backgroundColor: COLORS, borderWidth: 0 }],
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false, cutout: '68%',
+            plugins: {
+                legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 }, padding: 10 } },
+                tooltip: { callbacks: { label: c => ` ${fmt(c.raw)}원` } },
+            },
+        },
+    });
+}
+
+// ── 손익 바 차트 ──
+function renderPnlChart(holdings) {
+    const ctx = document.getElementById('pnlChart');
+    if (!ctx) return;
+    if (window.pnlChartInst) { window.pnlChartInst.destroy(); window.pnlChartInst = null; }
+    if (!holdings.length) return;
+
+    const labels  = holdings.map(h => h.name);
+    const pnlVals = holdings.map(h => h.profit);
+    const colors  = pnlVals.map(v => v >= 0 ? 'rgba(244,63,94,0.75)' : 'rgba(59,130,246,0.75)');
+
+    window.pnlChartInst = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: '평가손익',
+                data:  pnlVals,
+                backgroundColor: colors,
+                borderRadius: 6,
+                borderSkipped: false,
+            }],
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: {
+                    label: c => (c.parsed.y >= 0 ? '+' : '') + fmt(c.parsed.y) + '원',
+                }},
+            },
+            scales: {
+                x: { grid: { display: false } },
+                y: { grid: { color: 'rgba(0,0,0,0.04)' },
+                     ticks: { callback: v => (v >= 0 ? '+' : '') + fmt(v) } },
+            },
+        },
+    });
+}
+
+// ── 초기 로드 ──
+loadHoldings();
+// 30초마다 현재가 갱신
+setInterval(loadHoldings, 30000);
+</script>
+{% endblock %}

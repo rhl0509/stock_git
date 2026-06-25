@@ -1,0 +1,532 @@
+{% extends "stock/stock_layout.html" %}
+{% block title %}공시 알림 — GAGYE{% endblock %}
+{% block page_name %}공시 알림{% endblock %}
+
+{% block content %}
+<style>
+    .da-header {
+        display:flex; align-items:center; justify-content:space-between;
+        margin-bottom:20px; flex-wrap:wrap; gap:10px;
+    }
+    .da-title { font-size:1rem; font-weight:700; color:var(--fg-1); display:flex; align-items:center; gap:8px; }
+    .da-sub { font-size:0.75rem; font-weight:400; color:var(--fg-3); }
+
+    .run-btn {
+        display:inline-flex; align-items:center; gap:6px;
+        background:var(--bg-3); border:1px solid var(--line-2); border-radius:8px;
+        padding:7px 16px; font-size:0.8rem; font-weight:600; color:var(--fg-2);
+        cursor:pointer; transition:all 0.15s;
+    }
+    .run-btn:hover { background:var(--line-2); }
+
+    .panel-grid {
+        display:grid; grid-template-columns:300px 1fr; gap:16px; align-items:start;
+    }
+    @media(max-width:860px) { .panel-grid { grid-template-columns:1fr; } }
+
+    .card {
+        background:var(--bg-2); border:1px solid var(--line-1); border-radius:12px;
+        padding:16px; box-shadow:var(--card-shadow);
+    }
+    .card-title {
+        font-size:0.8rem; font-weight:700; color:var(--fg-2);
+        margin-bottom:14px; display:flex; align-items:center; gap:6px;
+        text-transform:uppercase; letter-spacing:0.04em;
+    }
+
+    /* ── 검색 입력 ── */
+    .search-wrap { position:relative; margin-bottom:8px; }
+    .search-row { display:flex; gap:6px; }
+    .search-input {
+        flex:1; border:1px solid var(--line-2); border-radius:8px;
+        padding:8px 12px; font-size:0.85rem; outline:none;
+        background:var(--bg-3); color:var(--fg-1);
+        transition:border-color 0.15s;
+    }
+    .search-input:focus { border-color:#0ea5e9; }
+    .search-input::placeholder { color:var(--fg-3); }
+    .search-btn {
+        background:#0ea5e9; border:none; border-radius:8px;
+        padding:8px 14px; font-size:0.85rem; font-weight:600; color:#fff;
+        cursor:pointer; white-space:nowrap; transition:background 0.15s;
+    }
+    .search-btn:hover { background:#0284c7; }
+    .search-btn:disabled { background:#94a3b8; cursor:not-allowed; }
+
+    /* 자동완성 */
+    .autocomplete {
+        position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:200;
+        background:var(--bg-2); border:1px solid var(--line-2);
+        border-radius:8px; box-shadow:var(--menu-shadow);
+        max-height:200px; overflow-y:auto; display:none;
+    }
+    .ac-item {
+        padding:9px 14px; cursor:pointer; font-size:0.83rem;
+        border-bottom:1px solid var(--line-1); color:var(--fg-1);
+        display:flex; align-items:center; gap:8px; transition:background 0.1s;
+    }
+    .ac-item:last-child { border-bottom:none; }
+    .ac-item:hover { background:var(--bg-3); }
+    .ac-code { font-family:var(--font-mono); font-size:0.72rem; color:var(--fg-3); }
+    .ac-market { font-size:0.68rem; color:var(--accent); margin-left:auto; }
+
+    /* 선택 프리뷰 */
+    .selected-preview {
+        display:none; align-items:center; gap:8px;
+        background:rgba(14,165,233,0.08); border:1px solid rgba(14,165,233,0.25);
+        border-radius:8px; padding:8px 12px; margin-bottom:8px;
+    }
+    .selected-preview.show { display:flex; }
+    .preview-name { font-size:0.85rem; font-weight:600; color:var(--fg-1); }
+    .preview-code { font-family:var(--font-mono); font-size:0.75rem; color:#0ea5e9; }
+    .preview-clear { background:none; border:none; cursor:pointer; color:var(--fg-3); margin-left:auto; padding:0; }
+    .preview-clear:hover { color:#ef4444; }
+
+    .add-btn {
+        width:100%; background:#0ea5e9; border:none; border-radius:8px;
+        padding:8px; font-size:0.85rem; font-weight:600; color:#fff;
+        cursor:pointer; transition:background 0.15s;
+    }
+    .add-btn:hover { background:#0284c7; }
+    .add-btn:disabled { background:#94a3b8; cursor:not-allowed; }
+
+    /* 관심 종목 목록 */
+    .wl-list { margin-top:8px; max-height:360px; overflow-y:auto; }
+    .wl-item {
+        display:flex; align-items:center; gap:10px;
+        padding:10px 8px; border-radius:8px; cursor:pointer;
+        transition:background 0.12s; border-bottom:1px solid var(--line-1);
+    }
+    .wl-item:last-child { border-bottom:none; }
+    .wl-item:hover { background:var(--bg-3); }
+    .wl-item.active { background:rgba(14,165,233,0.08); border-left:3px solid #0ea5e9; padding-left:5px; }
+    .wl-code-badge {
+        flex-shrink:0; font-family:var(--font-mono); font-size:0.72rem; font-weight:700;
+        background:var(--bg-3); border:1px solid var(--line-2); border-radius:6px;
+        padding:2px 7px; color:var(--fg-2); min-width:52px; text-align:center;
+    }
+    .wl-item.active .wl-code-badge { background:rgba(14,165,233,0.12); border-color:rgba(14,165,233,0.3); color:#0ea5e9; }
+    .wl-info { flex:1; min-width:0; }
+    .wl-name { font-size:0.88rem; font-weight:600; color:var(--fg-1); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .wl-date { font-size:0.7rem; color:var(--fg-3); margin-top:1px; }
+    .wl-del {
+        flex-shrink:0; background:none; border:none; cursor:pointer;
+        color:var(--fg-3); padding:4px; border-radius:6px; line-height:1;
+        transition:color 0.12s, background 0.12s;
+    }
+    .wl-del:hover { color:#ef4444; background:rgba(239,68,68,0.08); }
+    .wl-empty { text-align:center; padding:28px 16px; color:var(--fg-3); font-size:0.82rem; line-height:1.7; }
+
+    /* 이력 패널 */
+    .hist-toolbar {
+        display:flex; align-items:center; gap:8px; margin-bottom:12px; flex-wrap:wrap;
+    }
+    .filter-tabs { display:flex; gap:6px; flex-wrap:wrap; }
+    .filter-tab {
+        padding:4px 12px; border-radius:20px; font-size:0.78rem; font-weight:600;
+        border:1px solid var(--line-2); background:var(--bg-3); color:var(--fg-3);
+        cursor:pointer; transition:all 0.15s;
+    }
+    .filter-tab.active { background:#0ea5e9; border-color:#0ea5e9; color:#fff; }
+    .active-stock-label {
+        font-size:0.78rem; font-weight:600; color:#0ea5e9;
+        background:rgba(14,165,233,0.1); border:1px solid rgba(14,165,233,0.25);
+        border-radius:20px; padding:3px 10px; display:none;
+    }
+    .active-stock-label.show { display:inline-block; }
+
+    .hist-scroll { max-height:500px; overflow-y:auto; }
+    .hist-item {
+        display:flex; align-items:flex-start; gap:10px;
+        padding:11px 10px; border-bottom:1px solid var(--line-1);
+        cursor:pointer; transition:background 0.12s; border-radius:6px;
+    }
+    .hist-item:last-child { border-bottom:none; }
+    .hist-item:hover { background:var(--bg-3); }
+
+    .cat-badge {
+        flex-shrink:0; font-size:0.7rem; font-weight:700;
+        padding:3px 8px; border-radius:10px; margin-top:1px; white-space:nowrap;
+    }
+    .cat-badge.positive { background:rgba(16,185,129,0.12); color:#059669; border:1px solid rgba(16,185,129,0.3); }
+    .cat-badge.negative { background:rgba(239,68,68,0.1); color:#dc2626; border:1px solid rgba(239,68,68,0.25); }
+    .cat-badge.neutral  { background:rgba(107,114,128,0.1); color:var(--fg-3); border:1px solid var(--line-2); }
+    [data-theme="dark"] .cat-badge.positive { color:#34d399; }
+    [data-theme="dark"] .cat-badge.negative { color:#f87171; }
+
+    .hist-body { flex:1; min-width:0; }
+    .hist-title { font-size:0.85rem; font-weight:600; color:var(--fg-1); line-height:1.45; word-break:keep-all; }
+    .hist-meta { font-size:0.72rem; color:var(--fg-3); margin-top:3px; display:flex; gap:6px; flex-wrap:wrap; }
+    .hist-company { font-weight:600; color:var(--fg-2); }
+
+    .hist-empty { text-align:center; padding:48px 20px; color:var(--fg-3); font-size:0.83rem; }
+    .spin { display:inline-block; width:18px; height:18px; border:2px solid var(--line-2); border-top-color:#0ea5e9; border-radius:50%; animation:spin 0.9s linear infinite; vertical-align:middle; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    .stat-bar {
+        display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap;
+    }
+    .stat-pill {
+        font-size:0.75rem; font-weight:600; padding:4px 12px; border-radius:20px;
+        background:var(--bg-3); color:var(--fg-2); border:1px solid var(--line-1);
+    }
+</style>
+
+<div style="padding:20px 0 60px;">
+
+    <div class="da-header">
+        <div class="da-title">
+            <i class="bi bi-bell" style="color:#f59e0b;"></i>
+            공시 알림
+            <span class="da-sub">평일 09:00 – 15:30, 30분마다 자동 체크</span>
+        </div>
+        <button class="run-btn" onclick="runNow(this)" id="runBtn">
+            <i class="bi bi-arrow-clockwise" id="runIcon"></i> 지금 체크
+        </button>
+    </div>
+
+    <div class="panel-grid">
+
+        <!-- ── 관심 종목 ── -->
+        <div class="card">
+            <div class="card-title"><i class="bi bi-bookmark-star-fill" style="color:#f59e0b;"></i>관심 종목</div>
+
+            <!-- 검색 -->
+            <div class="search-wrap">
+                <div class="search-row">
+                    <input class="search-input" id="searchInput" type="text"
+                           placeholder="종목명 또는 코드 검색" autocomplete="off"
+                           oninput="onSearchInput()" onkeydown="onSearchKey(event)">
+                    <button class="search-btn" onclick="triggerSearch()">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </div>
+                <div class="autocomplete" id="acList"></div>
+            </div>
+
+            <!-- 선택된 종목 프리뷰 + 추가 버튼 -->
+            <div class="selected-preview" id="selectedPreview">
+                <div>
+                    <span class="preview-name" id="previewName"></span>
+                    <span class="preview-code" id="previewCode"></span>
+                </div>
+                <button class="preview-clear" onclick="clearSelection()" title="선택 해제"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <button class="add-btn" id="addBtn" onclick="addWatch()" disabled>
+                <i class="bi bi-plus-lg"></i> 관심 종목 추가
+            </button>
+
+            <!-- 목록 -->
+            <div class="wl-list" id="wlList">
+                <div class="wl-empty"><div class="spin"></div></div>
+            </div>
+        </div>
+
+        <!-- ── 공시 이력 ── -->
+        <div class="card">
+            <div class="card-title"><i class="bi bi-journal-text"></i>공시 이력</div>
+
+            <div class="hist-toolbar">
+                <div class="filter-tabs">
+                    <button class="filter-tab active" data-cat="" onclick="setFilter('',this)">전체</button>
+                    <button class="filter-tab" data-cat="positive" onclick="setFilter('positive',this)">📈 호재</button>
+                    <button class="filter-tab" data-cat="negative" onclick="setFilter('negative',this)">📉 악재</button>
+                    <button class="filter-tab" data-cat="neutral"  onclick="setFilter('neutral',this)">📋 일반</button>
+                </div>
+                <span class="active-stock-label" id="activeStockLabel"></span>
+            </div>
+
+            <div class="stat-bar" id="statBar"></div>
+
+            <div class="hist-scroll">
+                <div id="histList"><div class="hist-empty"><div class="spin"></div></div></div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+let _watchlist   = [];
+let _history     = [];
+let _activeCode  = '';
+let _activeCat   = '';
+let _selectedCode= '';
+let _selectedName= '';
+let _acDebounce  = null;
+
+// ── 자동완성 ──────────────────────────────────────────────────────────────
+
+function onSearchInput() {
+    clearTimeout(_acDebounce);
+    _acDebounce = setTimeout(fetchAc, 200);
+    clearSelection();
+}
+
+function onSearchKey(e) {
+    const ac = document.getElementById('acList');
+    const items = ac.querySelectorAll('.ac-item');
+    const active = ac.querySelector('.ac-item.ac-hover');
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const next = active ? active.nextElementSibling : items[0];
+        if (active) active.classList.remove('ac-hover');
+        if (next) { next.classList.add('ac-hover'); next.scrollIntoView({block:'nearest'}); }
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        const prev = active ? active.previousElementSibling : items[items.length-1];
+        if (active) active.classList.remove('ac-hover');
+        if (prev) { prev.classList.add('ac-hover'); prev.scrollIntoView({block:'nearest'}); }
+    } else if (e.key === 'Enter') {
+        if (active) { active.click(); }
+        else { triggerSearch(); }
+    } else if (e.key === 'Escape') {
+        hideAc();
+    }
+}
+
+async function fetchAc() {
+    const q = document.getElementById('searchInput').value.trim();
+    if (q.length < 1) { hideAc(); return; }
+    try {
+        const res  = await fetch('/search-stock-kr?q=' + encodeURIComponent(q));
+        const list = await res.json();
+        const ac   = document.getElementById('acList');
+        if (!list.length) { hideAc(); return; }
+        ac.innerHTML = list.map(s => `
+            <div class="ac-item" onclick="pickStock('${esc(s.code)}','${esc(s.name)}')">
+                <span>${esc(s.name)}</span>
+                <span class="ac-code">${s.code}</span>
+                <span class="ac-market">${s.market||''}</span>
+            </div>`).join('');
+        ac.style.display = 'block';
+    } catch(e) { hideAc(); }
+}
+
+async function triggerSearch() {
+    const q = document.getElementById('searchInput').value.trim();
+    if (!q) return;
+    await fetchAc();
+    const ac = document.getElementById('acList');
+    if (ac.style.display === 'block') return;
+    // 코드 직접 입력인 경우
+    if (/^\d{6}$/.test(q.padStart(6,'0'))) {
+        try {
+            const res  = await fetch('/search-stock-kr?q=' + encodeURIComponent(q));
+            const list = await res.json();
+            if (list.length === 1) { pickStock(list[0].code, list[0].name); return; }
+            if (list.length) {
+                ac.innerHTML = list.map(s => `
+                    <div class="ac-item" onclick="pickStock('${esc(s.code)}','${esc(s.name)}')">
+                        <span>${esc(s.name)}</span>
+                        <span class="ac-code">${s.code}</span>
+                        <span class="ac-market">${s.market||''}</span>
+                    </div>`).join('');
+                ac.style.display = 'block';
+            }
+        } catch(e) {}
+    }
+}
+
+function pickStock(code, name) {
+    _selectedCode = code;
+    _selectedName = name;
+    document.getElementById('searchInput').value = name;
+    document.getElementById('previewName').textContent = name;
+    document.getElementById('previewCode').textContent = code;
+    document.getElementById('selectedPreview').classList.add('show');
+    document.getElementById('addBtn').disabled = false;
+    hideAc();
+}
+
+function clearSelection() {
+    _selectedCode = '';
+    _selectedName = '';
+    document.getElementById('selectedPreview').classList.remove('show');
+    document.getElementById('addBtn').disabled = true;
+}
+
+function hideAc() {
+    const ac = document.getElementById('acList');
+    ac.style.display = 'none';
+    ac.innerHTML = '';
+    ac.querySelectorAll('.ac-hover').forEach(el => el.classList.remove('ac-hover'));
+}
+
+document.addEventListener('click', e => {
+    if (!e.target.closest('#searchInput') && !e.target.closest('#acList')) hideAc();
+});
+
+// ── 관심 종목 ──────────────────────────────────────────────────────────────
+
+function renderWatchlist() {
+    const el = document.getElementById('wlList');
+    if (!_watchlist.length) {
+        el.innerHTML = '<div class="wl-empty">관심 종목이 없습니다.<br>위에서 종목을 검색해 추가하세요.</div>';
+        return;
+    }
+    el.innerHTML = _watchlist.map(w => `
+        <div class="wl-item ${_activeCode === w.code ? 'active' : ''}" onclick="selectCode('${esc(w.code)}')">
+            <span class="wl-code-badge">${esc(w.code)}</span>
+            <div class="wl-info">
+                <div class="wl-name">${esc(w.name)}</div>
+                <div class="wl-date">추가 ${w.added_at||''}</div>
+            </div>
+            <button class="wl-del" onclick="event.stopPropagation();deleteWatch('${esc(w.code)}')" title="삭제">
+                <i class="bi bi-trash3"></i>
+            </button>
+        </div>`).join('');
+}
+
+async function loadWatchlist() {
+    const res  = await fetch('/api/dart_alert/watchlist');
+    const data = await res.json();
+    if (data.ok) { _watchlist = data.watchlist; renderWatchlist(); }
+}
+
+async function addWatch() {
+    if (!_selectedCode || !_selectedName) return;
+    const btn = document.getElementById('addBtn');
+    btn.disabled = true;
+    const res  = await fetch('/api/dart_alert/watchlist', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({code: _selectedCode, name: _selectedName})
+    });
+    const data = await res.json();
+    btn.disabled = false;
+    if (data.ok) {
+        document.getElementById('searchInput').value = '';
+        clearSelection();
+        await loadWatchlist();
+    } else {
+        alert(data.error || '추가 실패');
+    }
+}
+
+async function deleteWatch(code) {
+    if (!confirm('관심 종목에서 삭제할까요?')) return;
+    await fetch(`/api/dart_alert/watchlist/${code}`, {method:'DELETE'});
+    if (_activeCode === code) {
+        _activeCode = '';
+        document.getElementById('activeStockLabel').classList.remove('show');
+    }
+    await loadWatchlist();
+    await loadHistory();
+}
+
+function selectCode(code) {
+    _activeCode = (_activeCode === code) ? '' : code;
+    renderWatchlist();
+    const label = document.getElementById('activeStockLabel');
+    if (_activeCode) {
+        const stock = _watchlist.find(w => w.code === _activeCode);
+        label.textContent = stock ? stock.name : _activeCode;
+        label.classList.add('show');
+    } else {
+        label.classList.remove('show');
+    }
+    loadHistory();
+}
+
+// ── 공시 이력 ─────────────────────────────────────────────────────────────
+
+function setFilter(cat, btn) {
+    _activeCat = cat;
+    document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderHistory();
+}
+
+function renderHistory() {
+    const el = document.getElementById('histList');
+    let items = _history;
+    if (_activeCat) items = items.filter(i => i.category === _activeCat);
+
+    // 통계 바
+    const total = _history.length;
+    const pos = _history.filter(i=>i.category==='positive').length;
+    const neg = _history.filter(i=>i.category==='negative').length;
+    document.getElementById('statBar').innerHTML = total
+        ? `<span class="stat-pill">총 ${total}건</span>
+           <span class="stat-pill" style="color:#059669;">📈 호재 ${pos}</span>
+           <span class="stat-pill" style="color:#dc2626;">📉 악재 ${neg}</span>`
+        : '';
+
+    if (!items.length) {
+        el.innerHTML = '<div class="hist-empty">공시 이력이 없습니다.</div>';
+        return;
+    }
+    const catLabel = {positive:'호재', negative:'악재', neutral:'일반'};
+    el.innerHTML = items.map(it => {
+        const cat = it.category || 'neutral';
+        const d   = it.disclose_date || '';
+        const dateStr = d.length===8 ? `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6)}` : d;
+        const naverUrl = `https://finance.naver.com/item/news.naver?code=${it.code}`;
+        return `<div class="hist-item" onclick="window.open('${naverUrl}','_blank','noopener')">
+            <span class="cat-badge ${cat}">${catLabel[cat]||cat}</span>
+            <div class="hist-body">
+                <div class="hist-title">${esc(it.title)}</div>
+                <div class="hist-meta">
+                    <span class="hist-company">${esc(it.name||it.code)}</span>
+                    <span>공시일 ${dateStr}</span>
+                    <span style="color:var(--fg-3);margin-left:auto;font-size:0.68rem;">↗ 네이버</span>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+async function loadHistory() {
+    document.getElementById('histList').innerHTML = '<div class="hist-empty"><div class="spin"></div></div>';
+    let url;
+    if (_activeCode) {
+        // 종목 선택: DART API로 해당 종목 과거 공시 (180일)
+        url = `/api/dart_alert/stock_history?code=${_activeCode}&days=180`;
+    } else {
+        // 전체: 관심 종목 전체 최근 공시 합산 (30일)
+        url = '/api/dart_alert/watchlist_history?days=30';
+    }
+    try {
+        const res  = await fetch(url);
+        const data = await res.json();
+        if (data.ok) { _history = data.items; renderHistory(); }
+        else { document.getElementById('histList').innerHTML = '<div class="hist-empty">조회 실패</div>'; }
+    } catch(e) {
+        document.getElementById('histList').innerHTML = '<div class="hist-empty">조회 실패</div>';
+    }
+}
+
+// ── 지금 체크 ─────────────────────────────────────────────────────────────
+
+async function runNow(btn) {
+    const icon = document.getElementById('runIcon');
+    btn.disabled = true;
+    icon.className = 'spin';
+    try {
+        const res  = await fetch('/api/dart_alert/run', {method:'POST'});
+        const data = await res.json();
+        if (data.ok) {
+            await loadHistory();
+            btn.innerHTML = `<i class="bi bi-check-lg"></i> 완료 (신규 ${data.new}건)`;
+            setTimeout(() => { btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> 지금 체크'; }, 3000);
+        } else {
+            alert('오류: ' + data.error);
+        }
+    } catch(e) {
+        alert('오류: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        icon.className = 'bi bi-arrow-clockwise';
+    }
+}
+
+function esc(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+window.onload = function() {
+    loadWatchlist();
+    loadHistory();
+};
+</script>
+{% endblock %}

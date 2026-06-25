@@ -1,0 +1,224 @@
+{% extends "stock/stock_layout.html" %}
+{% block title %}거시지표 — GAGYE{% endblock %}
+{% block page_name %}거시지표{% endblock %}
+
+{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/apexcharts@3.45.1/dist/apexcharts.min.js"></script>
+<style>
+    .md-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px; margin-bottom: 20px;
+    }
+    @media(max-width:900px) { .md-grid { grid-template-columns: repeat(2,1fr); } }
+    @media(max-width:560px) { .md-grid { grid-template-columns: 1fr 1fr; } }
+
+    .md-card {
+        background: var(--bg-2); border: 1px solid var(--line-1);
+        border-radius: 12px; padding: 16px 18px;
+        box-shadow: var(--card-shadow);
+    }
+    .md-label {
+        font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .07em; color: var(--fg-3); font-family: var(--font-mono);
+        margin-bottom: 8px;
+    }
+    .md-val {
+        font-size: 1.6rem; font-weight: 700; font-family: var(--font-mono);
+        line-height: 1;
+    }
+    .md-sub { font-size: 0.72rem; color: var(--fg-3); margin-top: 6px; }
+    .md-chg { font-size: 0.8rem; font-weight: 600; margin-left: 6px; }
+    .up   { color: #f87171; }
+    .down { color: #6b9fc9; }
+    .flat { color: var(--fg-3); }
+
+    .chart-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 12px; margin-bottom: 20px;
+    }
+    @media(max-width:900px) { .chart-grid { grid-template-columns: 1fr; } }
+
+    .chart-card {
+        background: var(--bg-2); border: 1px solid var(--line-1);
+        border-radius: 12px; padding: 16px 18px;
+        box-shadow: var(--card-shadow);
+    }
+    .chart-title {
+        font-size: 0.78rem; font-weight: 700; color: var(--fg-2);
+        text-transform: uppercase; letter-spacing: .06em;
+        font-family: var(--font-mono); margin-bottom: 12px;
+    }
+
+    .us-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+    }
+    @media(max-width:700px) { .us-grid { grid-template-columns: repeat(2,1fr); } }
+
+    .section-head {
+        font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .08em; color: var(--fg-3); font-family: var(--font-mono);
+        margin: 24px 0 12px; display: flex; align-items: center; gap: 8px;
+    }
+    .section-head::after {
+        content: ''; flex: 1; height: 1px; background: var(--line-1);
+    }
+    .refresh-btn {
+        margin-left: auto; display: inline-flex; align-items: center; gap: 5px;
+        background: var(--bg-3); border: 1px solid var(--line-2); border-radius: 8px;
+        padding: 5px 12px; font-size: 0.75rem; font-weight: 600; color: var(--fg-2);
+        cursor: pointer; transition: background .15s;
+    }
+    .refresh-btn:hover { background: var(--line-2); }
+    .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line-2); border-top-color: #0ea5e9; border-radius: 50%; animation: spin .9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .updated-at { font-size: 0.72rem; color: var(--fg-3); margin-bottom: 20px; }
+</style>
+
+<div style="padding: 20px 0 60px;">
+
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+        <h2 style="font-size:1rem; font-weight:700; color:var(--fg-1); margin:0;">
+            <i class="bi bi-globe2" style="color:#0ea5e9; margin-right:6px;"></i>거시지표 대시보드
+        </h2>
+        <button class="refresh-btn" id="refreshBtn" onclick="load()">
+            <i class="bi bi-arrow-clockwise" id="refreshIcon"></i> 새로고침
+        </button>
+    </div>
+    <div class="updated-at" id="updatedAt"></div>
+
+    <!-- 한국 거시 -->
+    <div class="section-head"><i class="bi bi-flag-fill" style="color:#ef4444;"></i>한국</div>
+    <div class="md-grid" id="krCards">
+        <div class="md-card"><div class="md-label">KOSPI 20d</div><div class="spin"></div></div>
+    </div>
+
+    <!-- 미국/글로벌 -->
+    <div class="section-head"><i class="bi bi-building" style="color:#3b82f6;"></i>글로벌</div>
+    <div class="md-grid" id="usCards">
+        <div class="md-card"><div class="md-label">S&P500 1d</div><div class="spin"></div></div>
+    </div>
+
+    <!-- 차트 -->
+    <div class="section-head"><i class="bi bi-graph-up"></i>추이 (최근 30일)</div>
+    <div class="chart-grid">
+        <div class="chart-card">
+            <div class="chart-title">KOSPI</div>
+            <div id="chartKospi"></div>
+        </div>
+        <div class="chart-card">
+            <div class="chart-title">원/달러</div>
+            <div id="chartUsdkrw"></div>
+        </div>
+        <div class="chart-card">
+            <div class="chart-title">국고채 3년</div>
+            <div id="chartBond"></div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+let _charts = {};
+
+function fmt(v, decimals=2) {
+    if (v == null) return '–';
+    return Number(v).toFixed(decimals);
+}
+function pct(v, d=2) {
+    if (v == null) return '–';
+    const n = Number(v) * 100;
+    return (n >= 0 ? '+' : '') + n.toFixed(d) + '%';
+}
+function chgClass(v) {
+    if (v == null) return 'flat';
+    return v > 0 ? 'up' : v < 0 ? 'down' : 'flat';
+}
+
+function renderKrCards(m) {
+    const items = [
+        { label: 'KOSPI 20d 수익률', val: pct(m.kospi_ret_20d), cls: chgClass(m.kospi_ret_20d) },
+        { label: 'KOSPI 추세 (MA20)', val: pct(m.kospi_trend), cls: chgClass(m.kospi_trend) },
+        { label: '원/달러 20d', val: pct(m.usdkrw_ret_20d), cls: chgClass(m.usdkrw_ret_20d) },
+        { label: '국고채 3년', val: fmt(m.bond_3y) + '%', cls: '' },
+        { label: '콜금리', val: fmt(m.call_rate) + '%', cls: '' },
+    ];
+    document.getElementById('krCards').innerHTML = items.map(it => `
+        <div class="md-card">
+            <div class="md-label">${it.label}</div>
+            <div class="md-val ${it.cls}">${it.val}</div>
+        </div>`).join('');
+}
+
+function renderUsCards(g) {
+    const items = [
+        { label: 'S&P500 1d',    val: pct(g.sp500_ret_1d),   cls: chgClass(g.sp500_ret_1d) },
+        { label: 'S&P500 5d',    val: pct(g.sp500_ret_5d),   cls: chgClass(g.sp500_ret_5d) },
+        { label: 'NASDAQ 1d',    val: pct(g.nasdaq_ret_1d),  cls: chgClass(g.nasdaq_ret_1d) },
+        { label: 'VIX',          val: fmt(g.vix_level, 1),   cls: g.vix_level > 25 ? 'up' : g.vix_level < 15 ? 'down' : '' },
+        { label: '유가 20d',     val: pct(g.oil_ret_20d),    cls: chgClass(g.oil_ret_20d) },
+        { label: '미국 10년채',  val: fmt(g.us_10y) + '%',   cls: '' },
+    ];
+    document.getElementById('usCards').innerHTML = items.map(it => `
+        <div class="md-card">
+            <div class="md-label">${it.label}</div>
+            <div class="md-val ${it.cls}">${it.val}</div>
+        </div>`).join('');
+}
+
+function apexOpts(series, color) {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    return {
+        series: [{ data: series }],
+        chart: { type: 'line', height: 120, sparkline: { enabled: true },
+                 background: 'transparent', animations: { enabled: false } },
+        stroke: { curve: 'smooth', width: 2 },
+        colors: [color],
+        tooltip: { theme: isDark ? 'dark' : 'light',
+                   y: { formatter: v => v != null ? v.toFixed(2) : '–' } },
+        theme: { mode: isDark ? 'dark' : 'light' },
+    };
+}
+
+function renderCharts(series) {
+    const configs = [
+        { id: 'chartKospi',  data: series.kospi,   color: '#c6f24e' },
+        { id: 'chartUsdkrw', data: series.usdkrw,  color: '#f87171' },
+        { id: 'chartBond',   data: series.bond_3y, color: '#6b9fc9' },
+    ];
+    configs.forEach(({ id, data, color }) => {
+        if (!data || !data.length) return;
+        if (_charts[id]) { _charts[id].destroy(); }
+        _charts[id] = new ApexCharts(document.getElementById(id), apexOpts(data, color));
+        _charts[id].render();
+    });
+}
+
+async function load() {
+    const btn  = document.getElementById('refreshBtn');
+    const icon = document.getElementById('refreshIcon');
+    btn.disabled = true;
+    icon.className = 'spin';
+    try {
+        const res  = await fetch('/api/macro_dashboard');
+        const data = await res.json();
+        if (!data.ok) return;
+        renderKrCards(data.macro || {});
+        renderUsCards(data.global || {});
+        renderCharts(data.series || {});
+        document.getElementById('updatedAt').textContent =
+            '업데이트: ' + new Date().toLocaleTimeString('ko-KR');
+    } catch(e) {
+        console.error(e);
+    } finally {
+        btn.disabled = false;
+        icon.className = 'bi bi-arrow-clockwise';
+    }
+}
+
+window.onload = load;
+</script>
+{% endblock %}

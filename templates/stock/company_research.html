@@ -1,0 +1,477 @@
+{% extends 'stock/stock_layout.html' %}
+{% block title %}기업 리서치{% endblock %}
+{% block page_name %}기업 리서치{% endblock %}
+
+{% block content %}
+<style>
+    /* ── 검색 ── */
+    .cr-search-wrap {
+        position: relative;
+    }
+    .cr-autocomplete {
+        position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 100;
+        background: var(--bg-2); border: 1px solid var(--line-2);
+        border-radius: var(--r-2); box-shadow: var(--menu-shadow);
+        max-height: 220px; overflow-y: auto; display: none;
+    }
+    .cr-autocomplete-item {
+        padding: 9px 13px; cursor: pointer; font-size: 0.83rem;
+        border-bottom: 1px solid var(--line-1); color: var(--fg-1);
+        transition: background 0.1s; display: flex; align-items: center; gap: 10px;
+    }
+    .cr-autocomplete-item:last-child { border-bottom: none; }
+    .cr-autocomplete-item:hover { background: var(--bg-3); }
+    .cr-item-code { font-family: var(--font-mono); font-size: 0.72rem; color: var(--fg-3); }
+    .cr-item-market { font-family: var(--font-mono); font-size: 0.68rem; color: var(--accent); margin-left: auto; }
+
+    /* ── 섹션 카드 ── */
+    .cr-card {
+        background: var(--bg-2); border: 1px solid var(--line-1);
+        border-radius: var(--r-3); padding: 18px 20px; height: 100%;
+    }
+    .cr-card-title {
+        font-size: 0.68rem; font-weight: 600; font-family: var(--font-mono);
+        letter-spacing: 0.1em; text-transform: uppercase;
+        color: var(--fg-3); margin-bottom: 14px;
+        display: flex; align-items: center; gap: 7px;
+    }
+    .cr-card-title i { color: var(--accent); font-size: 0.85rem; }
+
+    /* ── 기업 헤더 ── */
+    .cr-company-header {
+        background: var(--bg-2); border: 1px solid var(--lime-border);
+        border-radius: var(--r-3); padding: 20px 22px;
+        display: flex; align-items: center; gap: 16px;
+        margin-bottom: 16px;
+    }
+    .cr-company-logo {
+        width: 44px; height: 44px; border-radius: var(--r-2);
+        background: var(--lime-soft); border: 1px solid var(--lime-border);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.1rem; font-weight: 800; color: var(--accent);
+        font-family: var(--font-mono); flex-shrink: 0;
+    }
+    .cr-company-name { font-size: 1.15rem; font-weight: 700; color: var(--fg-1); }
+    .cr-company-meta { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
+    .cr-badge {
+        font-size: 0.7rem; font-weight: 600; font-family: var(--font-mono);
+        padding: 2px 8px; border-radius: 4px;
+        background: var(--bg-3); border: 1px solid var(--line-2); color: var(--fg-2);
+    }
+    .cr-badge.accent { background: var(--lime-soft); border-color: var(--lime-border); color: var(--accent); }
+
+    /* ── 주가 그리드 ── */
+    .cr-price-grid {
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    }
+    @media (max-width: 576px) { .cr-price-grid { grid-template-columns: repeat(2, 1fr); } }
+    .cr-price-item { padding: 10px 12px; background: var(--bg-3); border-radius: var(--r-2); }
+    .cr-price-label { font-size: 0.65rem; color: var(--fg-3); font-family: var(--font-mono);
+        letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 4px; }
+    .cr-price-value { font-size: 0.95rem; font-weight: 700; color: var(--fg-1); font-family: var(--font-mono); }
+    .cr-price-value.up   { color: #f87171; }
+    .cr-price-value.down { color: #6b9fc9; }
+
+    /* ── 기업 정보 행 ── */
+    .cr-info-row {
+        display: flex; padding: 8px 0;
+        border-bottom: 1px solid var(--line-1); font-size: 0.83rem; gap: 12px;
+    }
+    .cr-info-row:last-child { border-bottom: none; }
+    .cr-info-label { color: var(--fg-3); font-family: var(--font-mono); font-size: 0.72rem;
+        white-space: nowrap; min-width: 80px; padding-top: 1px; }
+    .cr-info-value { color: var(--fg-1); word-break: break-word; }
+    .cr-info-value a { color: var(--accent); text-decoration: none; }
+    .cr-info-value a:hover { text-decoration: underline; }
+
+    /* ── 재무 테이블 ── */
+    .cr-fin-table { width: 100%; border-collapse: collapse; }
+    .cr-fin-table th {
+        font-size: 0.65rem; font-weight: 600; font-family: var(--font-mono);
+        letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-3);
+        padding: 0 0 10px; text-align: right; border-bottom: 1px solid var(--line-1);
+    }
+    .cr-fin-table th:first-child { text-align: left; }
+    .cr-fin-table td {
+        padding: 9px 0; font-size: 0.82rem; font-family: var(--font-mono);
+        border-bottom: 1px solid var(--line-1); color: var(--fg-1); text-align: right;
+    }
+    .cr-fin-table tr:last-child td { border-bottom: none; }
+    .cr-fin-table td:first-child { text-align: left; color: var(--fg-2); font-family: var(--font-sans); }
+    .cr-fin-table td.positive { color: #f87171; }
+    .cr-fin-table td.negative { color: #6b9fc9; }
+
+    /* ── 뉴스 ── */
+    .cr-news-item {
+        display: block; padding: 11px 0;
+        border-bottom: 1px solid var(--line-1);
+        text-decoration: none; color: inherit; transition: color 0.15s;
+    }
+    .cr-news-item:last-child { border-bottom: none; }
+    .cr-news-item:hover .cr-news-title { color: var(--accent); }
+    .cr-news-title { font-size: 0.85rem; font-weight: 500; color: var(--fg-1);
+        line-height: 1.4; margin-bottom: 4px; }
+    .cr-news-meta { display: flex; gap: 10px; align-items: center; }
+    .cr-news-source { font-size: 0.7rem; font-weight: 600; color: var(--accent);
+        font-family: var(--font-mono); }
+    .cr-news-date { font-size: 0.7rem; color: var(--fg-3); font-family: var(--font-mono); }
+
+    /* ── 빈 / 로딩 / 에러 ── */
+    .cr-placeholder {
+        text-align: center; padding: 48px 0; color: var(--fg-3); font-size: 0.82rem;
+    }
+    .cr-placeholder i { font-size: 2rem; display: block; margin-bottom: 10px; }
+    .cr-spinner {
+        width: 20px; height: 20px; border: 2px solid var(--line-2);
+        border-top-color: var(--accent); border-radius: 50%;
+        animation: cr-spin .7s linear infinite; display: inline-block;
+    }
+    @keyframes cr-spin { to { transform: rotate(360deg); } }
+
+    /* ── 토스트 ── */
+    .cr-toast {
+        position: fixed; bottom: 28px; right: 24px;
+        background: var(--bg-3); border: 1px solid var(--line-2);
+        color: var(--fg-1); padding: 10px 16px; border-radius: var(--r-2);
+        font-size: 0.82rem; font-weight: 500;
+        box-shadow: var(--menu-shadow); z-index: 9999;
+        opacity: 0; transform: translateY(8px);
+        transition: opacity 0.2s, transform 0.2s; pointer-events: none;
+    }
+    .cr-toast.show { opacity: 1; transform: translateY(0); }
+    .cr-toast.error { background: rgba(248,113,113,0.15); border-color: rgba(248,113,113,0.3); color: #f87171; }
+</style>
+
+<div class="pt-2 pb-5">
+
+    <!-- 검색 -->
+    <div class="cr-card mb-4" style="border-color:var(--lime-border)!important;">
+        <div class="d-flex gap-2">
+            <div class="cr-search-wrap flex-grow-1">
+                <input type="text" id="searchInput" class="form-control"
+                    placeholder="종목명 또는 종목코드 입력 (예: 삼성전자, 005930)"
+                    oninput="onSearchInput()" onkeydown="if(event.key==='Enter') runSearch()">
+                <div id="autocompleteList" class="cr-autocomplete"></div>
+            </div>
+            <button class="btn btn-primary px-4" onclick="runSearch()" id="searchBtn" style="white-space:nowrap;">
+                <i class="bi bi-search me-1"></i>분석
+            </button>
+        </div>
+    </div>
+
+    <!-- 결과 영역 -->
+    <div id="resultArea">
+        <div class="cr-placeholder">
+            <i class="bi bi-building"></i>
+            종목명이나 코드를 입력하면 기업 정보·재무·뉴스를 한번에 가져옵니다.
+        </div>
+    </div>
+
+</div>
+
+<div class="cr-toast" id="crToast"></div>
+
+<script>
+let _selectedCode = '', _selectedName = '', _acTimer = null;
+
+// ── 자동완성 ──────────────────────────────────────────
+function onSearchInput() {
+    clearTimeout(_acTimer);
+    _selectedCode = '';
+    const q = document.getElementById('searchInput').value.trim();
+    if (!q) { hideAc(); return; }
+    _acTimer = setTimeout(() => fetchAc(q), 220);
+}
+
+async function fetchAc(q) {
+    try {
+        const res  = await fetch('/search-stock-kr?q=' + encodeURIComponent(q));
+        const list = await res.json();
+        const ac   = document.getElementById('autocompleteList');
+        if (!list.length) { hideAc(); return; }
+        ac.innerHTML = list.slice(0, 10).map(s => `
+            <div class="cr-autocomplete-item" onclick="pickStock('${esc(s.code)}','${esc(s.name)}')">
+                <span>${esc(s.name)}</span>
+                <span class="cr-item-code">${s.code}</span>
+                <span class="cr-item-market">${s.market || ''}</span>
+            </div>`).join('');
+        ac.style.display = 'block';
+    } catch(e) { hideAc(); }
+}
+
+function hideAc() { document.getElementById('autocompleteList').style.display = 'none'; }
+
+function pickStock(code, name) {
+    _selectedCode = code;
+    _selectedName = name;
+    document.getElementById('searchInput').value = `${name} (${code})`;
+    hideAc();
+    runSearch();
+}
+
+document.addEventListener('click', e => {
+    if (!e.target.closest('#searchInput') && !e.target.closest('#autocompleteList')) hideAc();
+});
+
+// ── 검색 실행 ──────────────────────────────────────────
+async function runSearch() {
+    let code = _selectedCode;
+    if (!code) {
+        const raw = document.getElementById('searchInput').value.trim();
+        if (/^\d{4,6}$/.test(raw)) {
+            code = raw.padStart(6, '0');
+        } else if (raw) {
+            // 이름으로 검색해서 첫 번째 결과 사용
+            try {
+                const r = await fetch('/search-stock-kr?q=' + encodeURIComponent(raw));
+                const list = await r.json();
+                if (list.length) { code = list[0].code; _selectedName = list[0].name; }
+            } catch(e) {}
+        }
+    }
+    if (!code) { toast('종목을 선택하거나 코드를 입력해주세요.', 'error'); return; }
+
+    setLoading();
+    document.getElementById('searchBtn').disabled = true;
+
+    try {
+        const res  = await fetch('/api/company_research?code=' + encodeURIComponent(code));
+        const data = await res.json();
+        if (!res.ok) { toast(data.error || '조회 실패', 'error'); setEmpty(); return; }
+        render(data);
+    } catch(e) {
+        toast('네트워크 오류가 발생했습니다.', 'error'); setEmpty();
+    } finally {
+        document.getElementById('searchBtn').disabled = false;
+    }
+}
+
+// ── 렌더 ──────────────────────────────────────────────
+function render(data) {
+    const co  = data.company  || {};
+    const st  = data.stock    || {};
+    const fin = data.financials || {};
+    const name = co.stock_name || co.corp_name || _selectedName || '—';
+    const code = co.stock_code || _selectedCode || '—';
+    const corpCls = {'Y':'유가증권','K':'코스닥','N':'코넥스','E':'기타'}[co.corp_cls] || co.corp_cls || '';
+
+    // 주가 파싱
+    const closePrice = st.closePrice || '';
+    const change     = st.compareToPreviousClosePrice || '';
+    const changeRate = st.fluctuationsRatio || '';
+    const isUp       = parseFloat(String(change).replace(/,/g, '')) > 0;
+    const isDown     = parseFloat(String(change).replace(/,/g, '')) < 0;
+    const upDownCls  = isUp ? 'up' : isDown ? 'down' : '';
+    const upDownSign = isUp ? '+' : '';
+    const infoMap    = st.infoMap || {};
+
+    document.getElementById('resultArea').innerHTML = `
+        <!-- 헤더 -->
+        <div class="cr-company-header">
+            <div class="cr-company-logo">${esc(name.charAt(0))}</div>
+            <div>
+                <div class="cr-company-name">${esc(name)}</div>
+                <div class="cr-company-meta">
+                    <span class="cr-badge accent">${esc(code)}</span>
+                    ${corpCls ? `<span class="cr-badge">${esc(corpCls)}</span>` : ''}
+                    ${co.induty_code ? `<span class="cr-badge">업종 ${esc(co.induty_code)}</span>` : ''}
+                </div>
+            </div>
+            ${closePrice ? `
+            <div class="ms-auto text-end">
+                <div style="font-size:1.4rem;font-weight:700;font-family:var(--font-mono);color:var(--fg-1);">
+                    ${closePrice}원
+                </div>
+                <div class="cr-price-value ${upDownCls}" style="font-size:0.85rem;">
+                    ${upDownSign}${change} (${upDownSign}${changeRate}%)
+                </div>
+            </div>` : ''}
+        </div>
+
+        <div class="row g-3 mb-3">
+            <!-- 주가 상세 -->
+            ${closePrice ? `
+            <div class="col-12 col-lg-6">
+                <div class="cr-card">
+                    <div class="cr-card-title"><i class="bi bi-graph-up-arrow"></i>주가 정보</div>
+                    <div class="cr-price-grid">
+                        ${renderPriceItem('현재가', closePrice + '원', upDownCls)}
+                        ${infoMap['marketValue'] ? renderPriceItem('시가총액', infoMap['marketValue'] + '억', '') : ''}
+                        ${infoMap['per']         ? renderPriceItem('PER',      infoMap['per'] + 'x', '') : ''}
+                        ${infoMap['pbr']         ? renderPriceItem('PBR',      infoMap['pbr'] + 'x', '') : ''}
+                        ${infoMap['eps']               ? renderPriceItem('EPS',      infoMap['eps'], '') : ''}
+                        ${infoMap['bps']               ? renderPriceItem('BPS',      infoMap['bps'], '') : ''}
+                        ${infoMap['highPriceOf52Weeks'] ? renderPriceItem('52주 고', infoMap['highPriceOf52Weeks'], 'up') : ''}
+                        ${infoMap['lowPriceOf52Weeks']  ? renderPriceItem('52주 저', infoMap['lowPriceOf52Weeks'],  'down') : ''}
+                        ${infoMap['dividendYieldRatio'] ? renderPriceItem('배당수익률', infoMap['dividendYieldRatio'], '') : ''}
+                    </div>
+                </div>
+            </div>` : ''}
+
+            <!-- 기업 개요 -->
+            <div class="col-12 ${closePrice ? 'col-lg-6' : ''}">
+                <div class="cr-card">
+                    <div class="cr-card-title"><i class="bi bi-building"></i>기업 개요</div>
+                    ${renderInfoRow('대표자', co.ceo_nm)}
+                    ${renderInfoRow('설립일', fmtDate(co.est_dt))}
+                    ${renderInfoRow('결산월', co.acc_mt ? co.acc_mt + '월' : '')}
+                    ${renderInfoRow('주소', co.adres)}
+                    ${renderInfoRow('전화', co.phn_no)}
+                    ${renderInfoRow('홈페이지', co.hm_url ? `<a href="https://${co.hm_url}" target="_blank" rel="noopener">${esc(co.hm_url)}</a>` : '')}
+                    ${renderInfoRow('법인구분', corpCls)}
+                </div>
+            </div>
+        </div>
+
+        <!-- 재무 요약 -->
+        <div class="cr-card mb-3">
+            <div class="cr-card-title">
+                <i class="bi bi-bar-chart-line"></i>재무 요약
+                ${fin.year ? `<span style="font-size:0.65rem;color:var(--fg-3);font-weight:400;">${fin.year}년 ${fin.fs_div === 'CFS' ? '연결' : '개별'} 사업보고서</span>` : ''}
+            </div>
+            ${renderFinancials(fin.summary || {})}
+        </div>
+
+        <!-- 뉴스 -->
+        <div class="cr-card">
+            <div class="cr-card-title"><i class="bi bi-newspaper"></i>최신 뉴스</div>
+            <div id="newsSection">
+                <div class="cr-placeholder" style="padding:24px 0;">
+                    <div class="cr-spinner"></div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    loadNews(name);
+}
+
+function renderPriceItem(label, value, cls) {
+    return `<div class="cr-price-item">
+        <div class="cr-price-label">${esc(label)}</div>
+        <div class="cr-price-value ${cls}">${esc(String(value))}</div>
+    </div>`;
+}
+
+function renderInfoRow(label, value) {
+    if (!value) return '';
+    return `<div class="cr-info-row">
+        <span class="cr-info-label">${esc(label)}</span>
+        <span class="cr-info-value">${value}</span>
+    </div>`;
+}
+
+function renderFinancials(s) {
+    if (!Object.keys(s).length) {
+        return `<div class="cr-placeholder" style="padding:20px 0;"><i class="bi bi-inbox" style="font-size:1.4rem;"></i>재무 데이터를 가져오지 못했습니다.</div>`;
+    }
+    const rows = [
+        ['매출액',    s.revenue],
+        ['영업이익',  s.oper_income],
+        ['당기순이익',s.net_income],
+        ['자산총계',  s.total_assets],
+        ['부채총계',  s.total_liabilities],
+        ['자본총계',  s.total_equity],
+    ].filter(([, item]) => item);
+
+    const firstItem = rows[0]?.[1];
+    const th = firstItem ? `
+        <th style="text-align:left;">항목</th>
+        <th>${esc(firstItem.thstrm_nm || '당기')}</th>
+        <th>${esc(firstItem.frmtrm_nm || '전기')}</th>
+        <th>${esc(firstItem.bfefrmtrm_nm || '전전기')}</th>` : '';
+
+    const trs = rows.map(([label, item]) => {
+        const curr = item.thstrm_amount  || '';
+        const prev = item.frmtrm_amount  || '';
+        const pprev= item.bfefrmtrm_nm ? (item.bfefrmtrm_amount || '') : null;
+        return `<tr>
+            <td>${esc(label)}</td>
+            <td class="${colorCls(curr)}">${fmtAmount(curr)}</td>
+            <td class="${colorCls(prev)}">${fmtAmount(prev)}</td>
+            ${pprev !== null ? `<td class="${colorCls(pprev)}">${fmtAmount(pprev)}</td>` : '<td>—</td>'}
+        </tr>`;
+    }).join('');
+
+    return `<div style="overflow-x:auto;">
+        <table class="cr-fin-table"><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table>
+        <div style="margin-top:8px;font-size:0.68rem;color:var(--fg-3);font-family:var(--font-mono);">단위: 원 / 출처: DART 전자공시</div>
+    </div>`;
+}
+
+async function loadNews(companyName) {
+    try {
+        const res  = await fetch('/api/news/search?q=' + encodeURIComponent(companyName));
+        const data = await res.json();
+        const el   = document.getElementById('newsSection');
+        if (!el) return;
+        if (!data.items || !data.items.length) {
+            el.innerHTML = `<div class="cr-placeholder" style="padding:20px 0;"><i class="bi bi-inbox" style="font-size:1.4rem;"></i>뉴스가 없습니다.</div>`;
+            return;
+        }
+        el.innerHTML = data.items.slice(0, 8).map(item => `
+            <a href="${esc(item.link)}" target="_blank" rel="noopener" class="cr-news-item">
+                <div class="cr-news-title">${esc(item.title)}</div>
+                <div class="cr-news-meta">
+                    ${item.source ? `<span class="cr-news-source">${esc(item.source)}</span>` : ''}
+                    ${item.pubDate ? `<span class="cr-news-date">${fmtNewsDate(item.pubDate)}</span>` : ''}
+                </div>
+            </a>`).join('');
+    } catch(e) {
+        const el = document.getElementById('newsSection');
+        if (el) el.innerHTML = `<div class="cr-placeholder" style="padding:20px 0;">뉴스를 불러오지 못했습니다.</div>`;
+    }
+}
+
+// ── 유틸 ──────────────────────────────────────────────
+function setLoading() {
+    document.getElementById('resultArea').innerHTML = `
+        <div class="cr-placeholder"><div class="cr-spinner" style="width:28px;height:28px;border-width:3px;"></div>
+        <div style="margin-top:14px;">데이터를 수집하는 중입니다...</div></div>`;
+}
+function setEmpty() {
+    document.getElementById('resultArea').innerHTML =
+        `<div class="cr-placeholder"><i class="bi bi-exclamation-circle"></i>데이터를 가져오지 못했습니다.</div>`;
+}
+
+function fmtDate(d) {
+    if (!d || d.length < 8) return d || '';
+    return `${d.slice(0,4)}.${d.slice(4,6)}.${d.slice(6,8)}`;
+}
+function fmtAmount(v) {
+    if (!v || v === '-') return '—';
+    const n = parseInt(String(v).replace(/,/g, ''));
+    if (isNaN(n)) return v;
+    const abs = Math.abs(n);
+    const sign = n < 0 ? '-' : '';
+    if (abs >= 1_000_000_000_000) return sign + (abs / 1_000_000_000_000).toFixed(1) + '조';
+    if (abs >= 100_000_000)       return sign + (abs / 100_000_000).toFixed(0) + '억';
+    if (abs >= 10_000)            return sign + (abs / 10_000).toFixed(0) + '만';
+    return sign + abs.toLocaleString('ko-KR');
+}
+function colorCls(v) {
+    const n = parseInt(String(v || '').replace(/,/g, ''));
+    if (isNaN(n) || n === 0) return '';
+    return n > 0 ? 'positive' : 'negative';
+}
+function fmtNewsDate(raw) {
+    try {
+        const d = new Date(raw);
+        if (isNaN(d)) return '';
+        return d.toLocaleDateString('ko-KR', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+    } catch { return ''; }
+}
+function esc(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+let _toastTimer;
+function toast(msg, type = '') {
+    const el = document.getElementById('crToast');
+    clearTimeout(_toastTimer);
+    el.textContent = msg;
+    el.className = `cr-toast show${type ? ' ' + type : ''}`;
+    _toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+</script>
+{% endblock %}

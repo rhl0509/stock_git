@@ -1,0 +1,122 @@
+{% extends "stock/stock_layout.html" %}
+{% block title %}알림 히스토리{% endblock %}
+{% block page_name %}알림 발송 히스토리{% endblock %}
+
+{% block content %}
+<style>
+.panel { background:var(--bg-2); border:1px solid var(--line-1); border-radius:var(--r-3); padding:20px 22px; margin-bottom:14px; }
+.panel-title { font-size:.72rem; font-weight:700; color:var(--fg-3); text-transform:uppercase; letter-spacing:.08em; font-family:var(--font-mono); margin-bottom:16px; }
+.stats-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:14px; }
+@media(max-width:600px){ .stats-grid{grid-template-columns:repeat(2,1fr);} }
+.stat-card { background:var(--bg-3); border-radius:var(--r-2); padding:12px 14px; text-align:center; }
+.stat-label { font-size:.65rem; color:var(--fg-3); text-transform:uppercase; letter-spacing:.06em; }
+.stat-val   { font-size:1.4rem; font-weight:700; color:var(--fg-1); margin-top:4px; font-family:var(--font-mono); }
+.stat-val.green { color:#34d399; }
+.stat-val.red   { color:#f87171; }
+
+table { width:100%; border-collapse:collapse; font-size:.85rem; }
+th { text-align:left; padding:8px 10px; font-size:.68rem; font-weight:700; color:var(--fg-3); text-transform:uppercase; letter-spacing:.06em; border-bottom:1px solid var(--line-1); }
+td { padding:9px 10px; border-bottom:1px solid var(--line-2); vertical-align:top; color:var(--fg-2); }
+tr:last-child td { border-bottom:none; }
+.badge { display:inline-block; padding:2px 8px; border-radius:99px; font-size:.7rem; font-weight:700; }
+.badge-ok  { background:rgba(52,211,153,.15); color:#34d399; }
+.badge-err { background:rgba(248,113,113,.15); color:#f87171; }
+.msg-cell  { max-width:420px; white-space:pre-wrap; word-break:break-all; font-size:.78rem; color:var(--fg-2); }
+.err-cell  { font-size:.73rem; color:#f87171; }
+.empty-msg { text-align:center; padding:50px; color:var(--fg-3); font-size:.9rem; }
+</style>
+
+<!-- 통계 -->
+<div class="panel">
+    <div class="panel-title">발송 통계</div>
+    <div class="stats-grid">
+        <div class="stat-card"><div class="stat-label">전체</div><div class="stat-val" id="s-total">—</div></div>
+        <div class="stat-card"><div class="stat-label">성공</div><div class="stat-val green" id="s-ok">—</div></div>
+        <div class="stat-card"><div class="stat-label">실패</div><div class="stat-val red" id="s-fail">—</div></div>
+        <div class="stat-card"><div class="stat-label">최근 발송</div><div class="stat-val" id="s-last" style="font-size:.8rem;">—</div></div>
+    </div>
+</div>
+
+<!-- 히스토리 목록 -->
+<div class="panel">
+    <div class="panel-title">발송 내역</div>
+    <div id="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:140px">발송 시각</th>
+                    <th style="width:60px">채널</th>
+                    <th style="width:60px">결과</th>
+                    <th>메시지</th>
+                    <th>오류</th>
+                </tr>
+            </thead>
+            <tbody id="history-body"><tr><td colspan="5" class="empty-msg">로딩 중...</td></tr></tbody>
+        </table>
+    </div>
+    <div style="margin-top:12px; display:flex; gap:8px; align-items:center;">
+        <button onclick="loadMore()" id="load-more-btn"
+            style="padding:6px 18px; background:var(--bg-3); border:1px solid var(--line-1); border-radius:8px; color:var(--fg-2); cursor:pointer; font-size:.82rem;">
+            더 보기
+        </button>
+        <span id="count-info" style="font-size:.78rem; color:var(--fg-3);"></span>
+    </div>
+</div>
+
+<script>
+let offset = 0;
+const limit = 50;
+let total   = 0;
+
+async function loadStats() {
+    const r = await fetch('/api/notify/history/stats');
+    if (!r.ok) return;
+    const j = await r.json();
+    const s = j.stats || {};
+    document.getElementById('s-total').textContent = (s.total  ?? 0).toLocaleString();
+    document.getElementById('s-ok').textContent    = (s.success ?? 0).toLocaleString();
+    document.getElementById('s-fail').textContent  = (s.failure ?? 0).toLocaleString();
+    document.getElementById('s-last').textContent  = s.last_sent ?? '—';
+}
+
+async function loadMore() {
+    const r = await fetch(`/api/notify/history?limit=${limit}&offset=${offset}`);
+    if (!r.ok) return;
+    const j = await r.json();
+    total = j.total;
+    const rows = j.rows || [];
+
+    const tbody = document.getElementById('history-body');
+    if (offset === 0) tbody.innerHTML = '';
+
+    if (rows.length === 0 && offset === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-msg">발송 기록이 없습니다.</td></tr>';
+        document.getElementById('load-more-btn').style.display = 'none';
+        return;
+    }
+
+    rows.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="font-family:var(--font-mono);font-size:.78rem;white-space:nowrap;">${row.sent_at}</td>
+            <td>${row.channel}</td>
+            <td><span class="badge ${row.ok ? 'badge-ok' : 'badge-err'}">${row.ok ? '성공' : '실패'}</span></td>
+            <td class="msg-cell">${escHtml(row.message)}</td>
+            <td class="err-cell">${row.error_msg ? escHtml(row.error_msg) : ''}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    offset += rows.length;
+    document.getElementById('count-info').textContent = `${offset} / ${total}건`;
+    document.getElementById('load-more-btn').style.display = offset >= total ? 'none' : '';
+}
+
+function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+loadStats();
+loadMore();
+</script>
+{% endblock %}

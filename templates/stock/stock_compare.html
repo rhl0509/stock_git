@@ -1,0 +1,387 @@
+{% extends 'stock/stock_layout.html' %}
+{% block title %}종목 분석 - 가계부 Pro{% endblock %}
+{% block page_name %}종목 분석{% endblock %}
+
+{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+    .section-card { background:var(--bg-2); border:1px solid var(--line-1); border-radius:16px;
+                    box-shadow:var(--card-shadow);
+                    padding:22px 24px; margin-bottom:14px; }
+    .section-title { font-weight:700; font-size:0.88rem; color:var(--fg-1); margin-bottom:16px;
+                     display:flex; align-items:center; gap:8px; }
+    .search-wrap { display:flex; gap:0; margin-bottom:20px; }
+    .search-iw { position:relative; flex:1; }
+    .search-input { width:100%; padding:12px 16px; border:1.5px solid var(--line-2);
+                    border-radius:12px 0 0 12px; font-size:0.95rem; color:var(--fg-1);
+                    background:var(--bg-3); outline:none; }
+    .search-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(var(--accent-rgb),0.1); }
+    .search-input::placeholder { color:var(--fg-3); }
+    .search-btn { padding:12px 22px; background:var(--accent); color:#fff; border:none;
+                  border-radius:0 12px 12px 0; font-weight:700; cursor:pointer; transition:filter 0.15s; }
+    [data-theme="dark"] .search-btn { color:#080b10; }
+    .search-btn:hover { filter:brightness(1.1); }
+    .ac-list { position:absolute; top:calc(100% + 4px); left:0; right:0;
+               background:var(--bg-2); border:1px solid var(--line-2); border-radius:10px;
+               box-shadow:var(--menu-shadow); z-index:999;
+               max-height:220px; overflow-y:auto; display:none; }
+    .ac-list.show { display:block; }
+    .ac-item { display:flex; justify-content:space-between; padding:10px 14px; cursor:pointer;
+               border-bottom:1px solid var(--line-1); font-size:0.85rem; transition:background 0.1s; }
+    .ac-item:last-child { border-bottom:none; }
+    .ac-item:hover, .ac-item.active { background:var(--bg-3); }
+    .ac-name { font-weight:600; color:var(--fg-1); }
+    .ac-ticker { font-size:0.73rem; color:var(--fg-3); font-family:var(--font-mono); }
+    .verdict-card { border-radius:16px; padding:24px 28px; margin-bottom:14px;
+                    display:flex; align-items:center; gap:20px; flex-wrap:wrap; }
+    .verdict-icon { font-size:2.8rem; flex-shrink:0; }
+    .verdict-label { font-family:var(--font-sans); font-size:2rem; font-weight:700; }
+    .verdict-sub { font-size:0.88rem; opacity:0.65; margin-top:3px; }
+    .verdict-score { font-size:0.9rem; opacity:0.55; margin-top:4px; }
+    .signals-wrap { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+    .sig-badge { display:inline-flex; align-items:center; gap:4px; padding:5px 11px;
+                 border-radius:8px; font-size:0.75rem; font-weight:600; }
+    .sig-badge.pos  { background:rgba(5,150,105,0.12); color:#10b981; }
+    .sig-badge.neg  { background:rgba(244,63,94,0.10); color:#f43f5e; }
+    .sig-badge.flat { background:var(--bg-3); color:var(--fg-3); }
+    .sig-desc { font-size:0.7rem; color:var(--fg-3); margin-top:2px; }
+    .ind-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:14px; }
+    @media(max-width:700px){ .ind-grid{ grid-template-columns:1fr 1fr; } }
+    .ind-card { background:var(--bg-3); border:1px solid var(--line-1); border-radius:12px; padding:14px 16px; }
+    .ind-label { font-size:0.67rem; color:var(--fg-3); font-weight:700; text-transform:uppercase;
+                 letter-spacing:.6px; margin-bottom:5px; }
+    .ind-value { font-family:var(--font-sans); font-size:1.2rem; font-weight:700; color:var(--fg-1); }
+    .ind-desc  { font-size:0.71rem; margin-top:3px; }
+    .bar-track { height:4px; background:var(--line-2); border-radius:99px; margin-top:8px; overflow:hidden; }
+    .bar-fill  { height:100%; border-radius:99px; transition:width 0.6s; }
+    .chart-h-lg { height:300px; }
+    .chart-h-sm { height:160px; }
+    .empty-state { text-align:center; padding:70px 20px; color:var(--fg-3); }
+    .empty-state i { font-size:3rem; display:block; margin-bottom:14px; opacity:0.25; }
+    .skel { background:linear-gradient(90deg,var(--bg-3) 25%,var(--bg-0) 50%,var(--bg-3) 75%);
+            background-size:200%; animation:shimmer 1.3s infinite; border-radius:8px; }
+    @keyframes shimmer { 0%{background-position:200%}100%{background-position:-200%} }
+    .disclaimer { font-size:0.72rem; color:var(--fg-3); text-align:center; padding:8px 0 20px; }
+</style>
+
+<div style="padding:20px 0 60px;">
+    <div class="search-wrap">
+        <div class="search-iw">
+            <input type="text" id="analysisInput" class="search-input"
+                placeholder="종목명 또는 티커 (예: 삼성전자, AAPL)"
+                oninput="onAcInput()" onkeydown="onAcKeydown(event)">
+            <div class="ac-list" id="acList"></div>
+        </div>
+        <button class="search-btn" onclick="loadAnalysis()">
+            <i class="bi bi-activity me-1"></i>분석
+        </button>
+    </div>
+    <div id="result">
+        <div class="empty-state">
+            <i class="bi bi-bar-chart-line"></i>
+            <p>종목을 입력하면 RSI · MACD · 볼린저밴드 등<br>기술적 지표를 분석해 매매 신호를 알려드립니다</p>
+        </div>
+    </div>
+</div>
+
+<script>
+const ntt = {};  // name → ticker 매핑 캐시
+
+let sel = null, acIdx = -1, acTimer = null, charts = {};
+
+function onAcInput() {
+    const v = document.getElementById('analysisInput').value.trim();
+    sel = null; acIdx = -1;
+    if (!v) { closeAc(); return; }
+    clearTimeout(acTimer);
+    acTimer = setTimeout(async () => {
+        try {
+            const isKo = /[가-힣]/.test(v);
+            if (isKo) {
+                // 한글: DB에서 국내 종목 검색
+                const res = await fetch('/search-stock-kr?q=' + encodeURIComponent(v));
+                const data = await res.json();
+                const items = data.map(d => ({ name: d.name, ticker: d.ticker }));
+                items.forEach(d => { ntt[d.name] = d.ticker; });
+                showAc(items, v);
+            } else {
+                // 영문: yfinance 검색 (해외 종목)
+                const res = await fetch('/search-stock?q=' + encodeURIComponent(v));
+                if (!res.ok) return;
+                const data = await res.json();
+                showAc(data.map(d => ({ name: d.name || d.shortname || d.ticker, ticker: d.ticker || d.symbol })), v);
+            }
+        } catch {}
+    }, 200);
+}
+
+function showAc(items, q) {
+    const l = document.getElementById('acList');
+    if (!items.length) { l.innerHTML='<div style="padding:10px 14px;font-size:0.82rem;color:var(--fg-3);">검색 결과 없음</div>'; l.classList.add('show'); return; }
+    l.innerHTML = items.slice(0,8).map(s => {
+        const safeName   = s.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        const safeTicker = s.ticker.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        const hl = safeName.replace(q, `<mark style="background:none;font-weight:800;color:var(--fg-1);">${q}</mark>`);
+        return `<div class="ac-item" data-ticker="${safeTicker}" data-name="${safeName}">
+            <span class="ac-name">${hl}</span><span class="ac-ticker">${safeTicker}</span>
+        </div>`;
+    }).join('');
+    l.querySelectorAll('.ac-item').forEach(el => {
+        el.addEventListener('click', () => pickAc(el.dataset.ticker, el.dataset.name));
+    });
+    l.classList.add('show'); acIdx = -1;
+}
+function closeAc() { document.getElementById('acList').classList.remove('show'); acIdx=-1; }
+function pickAc(t,n) { sel=t; document.getElementById('analysisInput').value=n; closeAc(); loadAnalysis(); }
+function onAcKeydown(e) {
+    const items = document.getElementById('acList').querySelectorAll('.ac-item');
+    if (e.key==='ArrowDown'){e.preventDefault();acIdx=Math.min(acIdx+1,items.length-1);items.forEach((el,i)=>el.classList.toggle('active',i===acIdx));}
+    else if(e.key==='ArrowUp'){e.preventDefault();acIdx=Math.max(acIdx-1,-1);items.forEach((el,i)=>el.classList.toggle('active',i===acIdx));}
+    else if(e.key==='Enter'){if(acIdx>=0&&items[acIdx])items[acIdx].click();else loadAnalysis();}
+    else if(e.key==='Escape')closeAc();
+}
+document.addEventListener('click', e => { if(!e.target.closest('.search-iw'))closeAc(); });
+
+async function loadAnalysis() {
+    const raw = document.getElementById('analysisInput').value.trim();
+    if (!raw) return;
+    const isKo = /[가-힣]/.test(raw);
+    let sym = isKo ? (sel || ntt[raw]) : raw.toUpperCase();
+    sel = null; closeAc();
+
+    // 한글 입력이거나 6자리 숫자 코드이면 DB에서 ticker(.KS/.KQ) 조회
+    if (isKo && !sym || /^\d{6}$/.test(raw)) {
+        try {
+            const r = await fetch('/search-stock-kr?q=' + encodeURIComponent(raw));
+            const list = await r.json();
+            if (list.length) {
+                const match = list.find(s => s.code === raw) || list[0];
+                ntt[match.name] = match.ticker;
+                sym = match.ticker;
+            }
+        } catch {}
+    }
+    if (!sym) {
+        document.getElementById('result').innerHTML =
+            '<div class="empty-state"><i class="bi bi-exclamation-triangle"></i>'
+            + '<p>종목을 찾을 수 없습니다.<br>정확한 종목명 또는 티커를 입력해주세요.</p></div>';
+        return;
+    }
+
+    document.getElementById('result').innerHTML = `
+        <div class="skel" style="height:120px;margin-bottom:14px;border-radius:16px;"></div>
+        <div class="ind-grid">${Array(6).fill('<div class="skel" style="height:90px;"></div>').join('')}</div>
+        <div class="skel" style="height:300px;margin-bottom:14px;border-radius:16px;"></div>
+        <div class="skel" style="height:160px;margin-bottom:14px;border-radius:16px;"></div>
+        <div class="skel" style="height:160px;border-radius:16px;"></div>`;
+
+    try {
+        const res = await fetch(`/stock-analysis/${sym}`);
+        const d   = await res.json();
+        if (d.error) throw new Error(d.error);
+        try { render(sym, d); } catch(renderErr) {
+            console.error('Render error:', renderErr);
+            document.getElementById('result').innerHTML =
+                '<div class="empty-state"><i class="bi bi-exclamation-triangle"></i>'
+                + '<p>화면 렌더링 오류가 발생했습니다.</p>'
+                + '<p style="font-size:0.72rem;color:#d1d5db;margin-top:8px;">' + renderErr.message + '</p></div>';
+        }
+    } catch(err) {
+        console.error('Analysis error:', err);
+        document.getElementById('result').innerHTML =
+            '<div class="empty-state"><i class="bi bi-exclamation-triangle"></i>'
+            + '<p>분석 데이터를 불러오지 못했습니다.<br>종목 코드를 확인하거나 잠시 후 다시 시도해주세요.</p>'
+            + '<p style="font-size:0.72rem;color:#d1d5db;margin-top:8px;">' + err.message + '</p></div>';
+    }
+}
+
+function last(arr) { return [...arr].reverse().find(v => v !== null && v !== undefined); }
+
+function render(sym, d) {
+    const v = d.verdict;
+    const isKrx = sym.endsWith('.KS') || sym.endsWith('.KQ');
+    const cur   = isKrx ? '₩' : '$';
+    const fmtP  = p => isKrx ? Math.floor(p).toLocaleString('ko-KR') : p.toLocaleString('en-US',{minimumFractionDigits:2});
+
+    const rsiVal  = last(d.rsi) ?? 50;
+    const macdV   = last(d.macd) ?? 0;
+    const sigV    = last(d.macd_signal) ?? 0;
+    const macdDiff = macdV - sigV;
+    const bbUp    = last(d.bb_up);
+    const bbDn    = last(d.bb_dn);
+    const bbPct   = bbUp&&bbDn ? Math.max(0,Math.min(100,((d.current_price-bbDn)/(bbUp-bbDn))*100)) : 50;
+    const ma5v    = last(d.ma5);
+    const ma20v   = last(d.ma20);
+    const ma60v   = last(d.ma60);
+
+    const rsiColor  = rsiVal<30?'#10b981':rsiVal>70?'#f43f5e':'#f59e0b';
+    const rsiLabel  = rsiVal<30?'과매도 — 반등 기대':rsiVal>70?'과매수 — 조정 주의':'중립 구간';
+    const macdColor = macdDiff>=0?'#10b981':'#f43f5e';
+    const macdLabel = macdDiff>=0?'상승 추세 (양전)':'하락 추세 (음전)';
+    const bbColor   = bbPct>80?'#f43f5e':bbPct<20?'#10b981':'#f59e0b';
+    const bbLabel   = bbPct>90?'상단 — 단기 과매수':bbPct<10?'하단 — 반등 기대':bbPct>60?'중상단권':'중하단권';
+    // MA 카드 미리 계산 (중첩 템플릿 리터럴 방지)
+    const maCards = [['MA5',ma5v],['MA20',ma20v],['MA60',ma60v]].map(pair => {
+        const lbl = pair[0], mv = pair[1];
+        const c   = mv && d.current_price > mv ? '#10b981' : '#f43f5e';
+        const dir = d.current_price > (mv || 0) ? '위 ↑' : '아래 ↓';
+        const txt = mv ? '현재가 ' + lbl + ' ' + dir : '데이터 부족';
+        const val = mv ? cur + fmtP(mv) : '-';
+        return '<div class="ind-card">'
+            + '<div class="ind-label">' + lbl + '</div>'
+            + '<div class="ind-value">' + val + '</div>'
+            + '<div class="ind-desc" style="color:' + c + ';">' + txt + '</div>'
+            + '</div>';
+    }).join('');
+
+    const sigHtml = d.signals.map(s => {
+        const c = s.score>=2?'pos':s.score<=-2?'neg':s.score>0?'pos':s.score<0?'neg':'flat';
+        const ic= s.score>0?'bi-arrow-up-short':s.score<0?'bi-arrow-down-short':'bi-dash';
+        return `<div><span class="sig-badge ${c}"><i class="bi ${ic}"></i>${s.label}</span>
+            <div class="sig-desc">${s.desc}</div></div>`;
+    }).join('');
+
+    document.getElementById('result').innerHTML = `
+        <div class="verdict-card" style="background:${v.bg};border:1.5px solid ${v.color}40;">
+            <i class="bi ${v.icon} verdict-icon" style="color:${v.color};"></i>
+            <div style="flex:1;">
+                <div class="verdict-label" style="color:${v.color};">${v.label}</div>
+                <div class="verdict-sub">${d.name||sym} &nbsp;·&nbsp; ${cur}${fmtP(d.current_price)} <span style="font-size:0.7rem;padding:2px 6px;border-radius:4px;margin-left:4px;${d.is_realtime?'background:#ecfdf5;color:#059669;':'background:#f3f4f6;color:#9ca3af;'}">${d.is_realtime?'실시간':'전일종가'}</span></div>
+                <div class="verdict-score">종합 점수 ${d.total_score>0?'+':''}${d.total_score}점 &nbsp;(지표 ${d.signals.length}개 분석)</div>
+                <div style="margin-top:10px;display:flex;gap:16px;flex-wrap:wrap;">
+                    ${d.eps != null ? `<span style="font-size:0.8rem;color:${d.eps>0?'#10b981':d.eps<0?'#f43f5e':'#9ca3af'};">
+                        <b>EPS</b> ${d.is_kr ? (d.eps||0).toLocaleString('ko-KR')+'원' : '$'+(d.eps||0).toLocaleString('en-US',{minimumFractionDigits:2})}
+                    </span>` : ''}
+                    ${d.per != null ? `<span style="font-size:0.8rem;color:#6b7280;"><b>PER</b> ${d.per}배</span>` : ''}
+                    ${d.pbr != null ? `<span style="font-size:0.8rem;color:#6b7280;"><b>PBR</b> ${d.pbr}배</span>` : ''}
+                </div>
+            </div>
+        </div>
+
+        <div class="section-card" style="padding:18px 22px;">
+            <div class="section-title"><i class="bi bi-lightning-charge"></i>감지된 신호</div>
+            <div class="signals-wrap">${sigHtml}</div>
+        </div>
+
+        <div class="ind-grid">
+            <div class="ind-card">
+                <div class="ind-label">RSI (14)</div>
+                <div class="ind-value" style="color:${rsiColor};">${rsiVal.toFixed(1)}</div>
+                <div class="ind-desc" style="color:${rsiColor};">${rsiLabel}</div>
+                <div class="bar-track"><div class="bar-fill" style="width:${rsiVal}%;background:${rsiColor};"></div></div>
+            </div>
+            <div class="ind-card">
+                <div class="ind-label">MACD 괴리</div>
+                <div class="ind-value" style="color:${macdColor};">${macdDiff>=0?'+':''}${macdDiff.toFixed(3)}</div>
+                <div class="ind-desc" style="color:${macdColor};">${macdLabel}</div>
+            </div>
+            <div class="ind-card">
+                <div class="ind-label">볼린저 위치</div>
+                <div class="ind-value" style="color:${bbColor};">${bbPct.toFixed(0)}%</div>
+                <div class="ind-desc" style="color:${bbColor};">${bbLabel}</div>
+                <div class="bar-track"><div class="bar-fill" style="width:${bbPct}%;background:${bbColor};"></div></div>
+            </div>
+            ${maCards}
+        </div>
+
+        <div class="section-card">
+            <div class="section-title"><i class="bi bi-graph-up"></i>가격 · 이동평균 · 볼린저밴드 (6개월)</div>
+            <div class="chart-h-lg"><canvas id="priceChart"></canvas></div>
+        </div>
+        <div class="section-card">
+            <div class="section-title"><i class="bi bi-activity"></i>RSI — 30 과매도 / 70 과매수</div>
+            <div class="chart-h-sm"><canvas id="rsiChart"></canvas></div>
+        </div>
+        <div class="section-card">
+            <div class="section-title"><i class="bi bi-bar-chart"></i>MACD (12, 26, 9)</div>
+            <div class="chart-h-sm"><canvas id="macdChart"></canvas></div>
+        </div>
+        <div class="section-card">
+            <div class="section-title"><i class="bi bi-bar-chart-fill"></i>거래량 &nbsp;<span style="font-size:0.72rem;color:#9ca3af;font-weight:400;">빨강 = 평균 1.5배 이상</span></div>
+            <div class="chart-h-sm"><canvas id="volChart"></canvas></div>
+        </div>
+        <div class="disclaimer">⚠ 본 분석은 기술적 지표 기반의 참고 정보입니다. 투자 판단의 최종 책임은 본인에게 있습니다.</div>`;
+
+    Object.values(charts).forEach(c=>c.destroy()); charts={};
+    const SK = 30;
+    const lb = d.dates.slice(SK).map(x=>x.slice(5));
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const gridColor = isDark ? 'rgba(255,255,255,0.07)' : '#f3f4f6';
+    const tickColor = isDark ? '#4a5570' : '#9ca3af';
+
+    charts.price = new Chart(document.getElementById('priceChart'),{
+        type:'line',
+        data:{ labels:lb, datasets:[
+            {label:'종가',    data:d.close.slice(SK), borderColor:'#374151', borderWidth:1.5, pointRadius:0, tension:0.2, fill:false},
+            {label:'MA5',    data:d.ma5.slice(SK),   borderColor:'#3b82f6', borderWidth:1.2, pointRadius:0, tension:0.3, fill:false},
+            {label:'MA20',   data:d.ma20.slice(SK),  borderColor:'#f59e0b', borderWidth:1.2, pointRadius:0, tension:0.3, fill:false},
+            {label:'MA60',   data:d.ma60.slice(SK),  borderColor:'#8b5cf6', borderWidth:1.2, pointRadius:0, tension:0.3, fill:false},
+            {label:'BB 상단',data:d.bb_up.slice(SK), borderColor:'rgba(239,68,68,0.35)',  borderWidth:1, borderDash:[4,4], pointRadius:0, fill:'+1', backgroundColor:'rgba(239,68,68,0.04)'},
+            {label:'BB 중심',data:d.bb_mid.slice(SK),borderColor:'rgba(239,68,68,0.2)',   borderWidth:1, borderDash:[2,2], pointRadius:0, fill:false},
+            {label:'BB 하단',data:d.bb_dn.slice(SK), borderColor:'rgba(239,68,68,0.35)',  borderWidth:1, borderDash:[4,4], pointRadius:0, fill:false},
+        ]},
+        options:{responsive:true,maintainAspectRatio:false,
+            interaction:{mode:'index',intersect:false},
+            plugins:{legend:{position:'top',labels:{boxWidth:10,font:{size:10},padding:10,color:tickColor}}},
+            scales:{x:{grid:{display:false},ticks:{maxTicksLimit:8,font:{size:10},color:tickColor}},y:{grid:{color:gridColor},ticks:{font:{size:10},color:tickColor}}}}
+    });
+
+    charts.rsi = new Chart(document.getElementById('rsiChart'),{
+        type:'line',
+        data:{ labels:lb, datasets:[{label:'RSI',data:d.rsi.slice(SK),borderColor:'#8b5cf6',borderWidth:1.5,pointRadius:0,fill:false}]},
+        options:{responsive:true,maintainAspectRatio:false,
+            plugins:{legend:{display:false}},
+            scales:{x:{grid:{display:false},ticks:{maxTicksLimit:8,font:{size:10},color:tickColor}},
+                y:{min:0,max:100,grid:{color:gridColor},ticks:{stepSize:20,font:{size:10},color:tickColor}}}},
+        plugins:[{id:'rz',beforeDraw(chart){
+            const{ctx,chartArea:ca,scales:{y}}=chart;
+            ctx.save();
+            [[70,'rgba(244,63,94,0.07)'],[30,'rgba(16,185,129,0.07)']].forEach(([val,fill])=>{
+                ctx.fillStyle=fill;
+                if(val===70) ctx.fillRect(ca.left,ca.top,ca.width,y.getPixelForValue(70)-ca.top);
+                else ctx.fillRect(ca.left,y.getPixelForValue(30),ca.width,ca.bottom-y.getPixelForValue(30));
+            });
+            [[70,'rgba(244,63,94,0.4)'],[30,'rgba(16,185,129,0.4)']].forEach(([val,c])=>{
+                ctx.strokeStyle=c;ctx.lineWidth=1;ctx.setLineDash([4,4]);
+                const py=y.getPixelForValue(val);
+                ctx.beginPath();ctx.moveTo(ca.left,py);ctx.lineTo(ca.right,py);ctx.stroke();
+            });
+            ctx.restore();
+        }}]
+    });
+
+    charts.macd = new Chart(document.getElementById('macdChart'),{
+        type:'bar',
+        data:{ labels:lb, datasets:[
+            {label:'MACD Hist',data:d.macd_hist.slice(SK),type:'bar',
+             backgroundColor:d.macd_hist.slice(SK).map(v=>v>=0?'rgba(16,185,129,0.6)':'rgba(244,63,94,0.6)'),borderRadius:2},
+            {label:'MACD',  data:d.macd.slice(SK),        type:'line',borderColor:'#3b82f6',borderWidth:1.5,pointRadius:0,fill:false},
+            {label:'Signal',data:d.macd_signal.slice(SK), type:'line',borderColor:'#f59e0b',borderWidth:1.2,borderDash:[3,3],pointRadius:0,fill:false},
+        ]},
+        options:{responsive:true,maintainAspectRatio:false,
+            interaction:{mode:'index',intersect:false},
+            plugins:{legend:{position:'top',labels:{boxWidth:10,font:{size:10},padding:10,color:tickColor}}},
+            scales:{x:{grid:{display:false},ticks:{maxTicksLimit:8,font:{size:10},color:tickColor}},y:{grid:{color:gridColor},ticks:{font:{size:10},color:tickColor}}}}
+    });
+
+    const avgVol = d.volume.slice(-20).reduce((a,b)=>a+b,0)/20;
+    charts.vol = new Chart(document.getElementById('volChart'),{
+        type:'bar',
+        data:{ labels:lb, datasets:[{
+            label:'거래량',data:d.volume.slice(SK),
+            backgroundColor:d.volume.slice(SK).map(v=>v>avgVol*1.5?'rgba(244,63,94,0.6)':'rgba(148,163,184,0.45)'),borderRadius:2}]},
+        options:{responsive:true,maintainAspectRatio:false,
+            plugins:{legend:{display:false}},
+            scales:{x:{grid:{display:false},ticks:{maxTicksLimit:8,font:{size:10},color:tickColor}},
+                y:{grid:{color:gridColor},ticks:{font:{size:10},color:tickColor,
+                    callback:v=>v>=1e8?(v/1e8).toFixed(0)+'억':v>=1e4?(v/1e4).toFixed(0)+'만':v}}}}
+    });
+}
+
+const sp = new URLSearchParams(location.search);
+if (sp.get('symbol')) {
+    document.getElementById('analysisInput').value = sp.get('symbol');
+    loadAnalysis();
+}
+</script>
+{% endblock %}

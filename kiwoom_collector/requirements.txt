@@ -1,0 +1,8 @@
+# 32비트 키움 콜렉터 전용 의존성
+flask
+PyQt5
+python-dotenv
+pywin32
+pymysql
+pandas
+pytz

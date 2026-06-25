@@ -1,0 +1,26 @@
+{
+  "morning_brief": {
+    "enabled": true,
+    "show_triple": true,
+    "show_daily": true,
+    "show_short": true,
+    "show_swing": true,
+    "max_picks_per_cat": 3,
+    "show_macro": true
+  },
+  "thresholds": {
+    "daily_min_conf": 0.55,
+    "short_min_conf": 0.55,
+    "swing_min_conf": 0.55,
+    "triple_min_combined": 0.55
+  },
+  "errors": {
+    "notify_train_error": true,
+    "notify_recommend_error": true,
+    "notify_incremental_error": true
+  },
+  "closing_brief": {
+    "enabled": true,
+    "show_paper_summary": true
+  }
+}

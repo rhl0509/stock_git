@@ -1,0 +1,66 @@
+/*
+ * GAGYE Design Tokens — local fallback
+ * Bootstrap + Google Fonts는 CDN에서 로드.
+ * 이 파일은 커스텀 변수와 유틸리티만 담습니다.
+ */
+
+:root {
+    /* Backgrounds */
+    --bg-0:   #080b10;
+    --bg-1:   #0f1219;
+    --bg-2:   #161c27;
+    --bg-3:   #1d2435;
+
+    /* Foregrounds */
+    --fg-1:   #e4eaf6;
+    --fg-2:   #8892a4;
+    --fg-3:   #4a5570;
+
+    /* Borders */
+    --line-1: rgba(255,255,255,0.07);
+    --line-2: rgba(255,255,255,0.13);
+
+    /* Accent */
+    --lime:        #c6f24e;
+    --lime-soft:   rgba(198,242,78,0.08);
+    --lime-border: rgba(198,242,78,0.22);
+
+    /* Semantic */
+    --income:  #34d399;
+    --expense: #f87171;
+    --up:      #f87171;
+    --down:    #6b9fc9;
+
+    /* Radius */
+    --r-2: 6px;
+    --r-3: 10px;
+    --r-4: 14px;
+
+    /* Typography */
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+
+    /* Sidebar */
+    --sidebar-width: 240px;
+}
+
+/* ── 스크롤바 ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--fg-3); }
+
+/* ── 공통 유틸리티 ── */
+.text-lime  { color: var(--lime) !important; }
+.text-up    { color: var(--up) !important; }
+.text-down  { color: var(--down) !important; }
+.text-muted-1 { color: var(--fg-2) !important; }
+.text-muted-2 { color: var(--fg-3) !important; }
+.bg-surface { background: var(--bg-2) !important; }
+.border-dark { border-color: var(--line-1) !important; }
+.font-mono  { font-family: var(--font-mono) !important; }
+
+/* ── 수익/손실 뱃지 ── */
+.badge-up   { background: rgba(248,113,113,0.12); color: var(--up);   border: 1px solid rgba(248,113,113,0.2); border-radius: 4px; padding: 2px 7px; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; }
+.badge-down { background: rgba(107,159,201,0.12); color: var(--down); border: 1px solid rgba(107,159,201,0.2); border-radius: 4px; padding: 2px 7px; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; }
+.badge-lime { background: var(--lime-soft); color: var(--lime); border: 1px solid var(--lime-border); border-radius: 4px; padding: 2px 7px; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; }
