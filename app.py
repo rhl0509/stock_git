@@ -264,6 +264,27 @@ def _startup():
         except Exception as e:
             logger.error(f"[{label}] 테이블 초기화 실패: {e}")
 
+    # ── 결제 모드 가드 ──
+    # PortOne 시크릿이 없으면 mock 결제(실결제 없이 즉시 충전)다. 내부/데모용으론 의도된
+    # 상태지만, 공개 도메인에 mock 인 채로 노출되면 누구나 무한 무료 크레딧으로 유료 AI를
+    # 호출(=실제 비용)할 수 있으므로 기동 시 경고를 남긴다.
+    try:
+        from routes.credits import _is_mock
+        if _is_mock():
+            base_url = (os.getenv('APP_BASE_URL') or '').lower()
+            looks_public = bool(base_url) and not any(
+                h in base_url for h in ('localhost', '127.0.0.1', '0.0.0.0'))
+            if looks_public:
+                logger.warning(
+                    "[CREDITS] mock 결제 모드인데 APP_BASE_URL=%s 가 공개 도메인으로 보입니다. "
+                    "외부 노출 시 누구나 무한 무료 크레딧 충전이 가능합니다. "
+                    "유료 운영이면 PORTONE_API_SECRET 등 PortOne 키를 설정하세요.",
+                    os.getenv('APP_BASE_URL'))
+            else:
+                logger.info("[CREDITS] mock 결제 모드 (실결제 없이 충전 즉시 성공). 내부/데모용.")
+    except Exception as e:
+        logger.error(f"[CREDITS] 결제 모드 점검 실패: {e}")
+
     try:
         from notify.send import _ensure_table as _ensure_notify_table
         _ensure_notify_table()

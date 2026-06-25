@@ -102,51 +102,62 @@ def pass_status(request: Request):
 
 @router.post('/api/recommend-pass/enable')
 def pass_enable(request: Request):
-    """AI 추천받기 ON. 오늘 첫 활성화면 크레딧 차감, 이미 결제일이면 재차감 없이 켜기만."""
+    """AI 추천받기 ON. 오늘 첫 활성화면 크레딧 차감, 이미 결제일이면 재차감 없이 켜기만.
+
+    동시 요청에서 이중 차감을 막기 위해 (user_no, pass_day) PK INSERT 로 '오늘 슬롯'을
+    원자적으로 선점한다. INSERT 성공(rowcount=1)한 요청만 신규로 간주해 차감하고,
+    이미 존재하면(중복키) 재차감 없이 enabled 만 복구한다. 차감 실패 시 방금 만든
+    선점 행을 삭제해 미결제 상태로 되돌린다(다음 시도에서 다시 결제 가능).
+    """
     if 'user_no' not in request.session:
         return JSONResponse({"error": "로그인 필요"}, status_code=401)
     user_no = request.session['user_no']
     pd = _pass_day()
     cost = Config.RECOMMEND_PASS_COST
 
-    # 오늘 이미 결제했는지 확인 — 결제했으면 재차감 없이 enabled 만 복구
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT enabled FROM recommend_pass WHERE user_no=%s AND pass_day=%s",
-                (user_no, pd))
-            row = cur.fetchone()
-        if row:
-            if not row['enabled']:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "UPDATE recommend_pass SET enabled=1 WHERE user_no=%s AND pass_day=%s",
-                        (user_no, pd))
-                conn.commit()
-            return JSONResponse({**_status_payload(user_no), "charged": 0})
-    finally:
-        conn.close()
-
-    # 신규 결제 — 크레딧 차감 후 패스 발급
-    from routes.credits import deduct_credits
-    d = deduct_credits(user_no, cost, memo=f"AI 추천 데이 패스 ({pd.isoformat()})")
-    if not d.get('ok'):
-        return JSONResponse(
-            {"error": d.get('error') or "크레딧이 부족합니다.",
-             "balance": d.get('balance'), "cost": cost},
-            status_code=402)
-
+    # 1) 오늘 슬롯을 원자적으로 선점. INSERT 면 신규(rowcount=1), 중복키면 기존(rowcount=0).
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO recommend_pass (user_no, pass_day, enabled, charged) "
-                "VALUES (%s,%s,1,%s) ON DUPLICATE KEY UPDATE enabled=1",
+                "VALUES (%s,%s,1,%s) ON DUPLICATE KEY UPDATE user_no=user_no",
                 (user_no, pd, cost))
+            is_new = (cur.rowcount == 1)
         conn.commit()
     finally:
         conn.close()
+
+    # 2) 기존 행이면 재차감 없이 enabled 만 복구하고 종료
+    if not is_new:
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE recommend_pass SET enabled=1 WHERE user_no=%s AND pass_day=%s",
+                    (user_no, pd))
+            conn.commit()
+        finally:
+            conn.close()
+        return JSONResponse({**_status_payload(user_no), "charged": 0})
+
+    # 3) 신규 선점에 성공한 요청만 차감. 실패하면 선점 행을 되돌린다.
+    from routes.credits import deduct_credits
+    d = deduct_credits(user_no, cost, memo=f"AI 추천 데이 패스 ({pd.isoformat()})")
+    if not d.get('ok'):
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM recommend_pass WHERE user_no=%s AND pass_day=%s",
+                    (user_no, pd))
+            conn.commit()
+        finally:
+            conn.close()
+        return JSONResponse(
+            {"error": d.get('error') or "크레딧이 부족합니다.",
+             "balance": d.get('balance'), "cost": cost},
+            status_code=402)
 
     return JSONResponse({**_status_payload(user_no), "charged": cost})
 
