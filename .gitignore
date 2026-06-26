@@ -24,6 +24,8 @@ XGBoost_v2/model/*.txt
 XGBoost_v2/model/xgb_*.json
 XGBoost_v2/model/lgb_*.txt
 XGBoost_v2/model/recommend_history/
+XGBoost_v2/model/recommend_history_abs/
+XGBoost_v2/model/daily_recommend*.json
 trading/model/
 
 # ── 빌드 산출물 ──
