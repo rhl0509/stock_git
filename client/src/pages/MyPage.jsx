@@ -6,7 +6,7 @@ import api from '../api/index.js';
 
 const TAB = { info: 'info', pw: 'pw', credit: 'credit' };
 
-const CHARGE_AMOUNTS = [5000, 10000, 30000, 50000, 100000];
+const CHARGE_AMOUNTS = [5000, 10000, 30000, 50000, 100000, 1000]; // 1000원: 결제 테스트용
 
 // AI 기능별 요구 등급(서버 AI_FEATURE_MIN_TIER 와 일치). 등급 미달 시 안내 모달에 사용.
 const FEATURE_META = {
@@ -65,10 +65,12 @@ export default function MyPage() {
   const canUse = (feat) => !user?.ai_access || user.ai_access[feat] !== false;
 
   // 기본 정보
-  const [profile, setProfile] = useState({ user_id: '', name: '', email: '', created_at: '' });
+  const [profile, setProfile] = useState({ user_id: '', name: '', email: '', phone: '', created_at: '' });
   const [infoLoading, setInfoLoading] = useState(true);
   const [infoMsg, setInfoMsg] = useState({ type: '', text: '' });
   const [infoSaving, setInfoSaving] = useState(false);
+  const [showInfoConfirm, setShowInfoConfirm] = useState(false); // 저장 확인 모달
+  const [showInfoDone, setShowInfoDone] = useState(false);       // 변경 완료 모달
 
   // 비밀번호
   const [pw, setPw] = useState({ current_password: '', new_password: '', confirm: '' });
@@ -188,6 +190,11 @@ export default function MyPage() {
           totalAmount: prep.amount,
           currency:    'CURRENCY_KRW',
           payMethod:   'CARD',
+          customer: {                       // 이니시스 V2 일반결제는 구매자 이메일·전화 필수
+            email:       profile.email || undefined,
+            fullName:    profile.name  || undefined,
+            phoneNumber: profile.phone || undefined,
+          },
         });
         if (res?.code != null) throw new Error(res.message || '결제가 취소되었습니다.');
       }
@@ -230,13 +237,20 @@ export default function MyPage() {
     setChatSending(false);
   };
 
-  const saveInfo = async e => {
+  const askSaveInfo = e => {
     e.preventDefault();
-    setInfoMsg({ type: '', text: '' }); setInfoSaving(true);
+    setInfoMsg({ type: '', text: '' });
+    setShowInfoConfirm(true);
+  };
+
+  const doSaveInfo = async () => {
+    setInfoSaving(true);
     try {
-      await api.put('/auth/profile', { name: profile.name, email: profile.email });
-      setInfoMsg({ type: 'success', text: '정보가 수정되었습니다.' });
+      await api.put('/auth/profile', { name: profile.name, email: profile.email, phone: profile.phone });
+      setShowInfoConfirm(false);
+      setShowInfoDone(true);
     } catch (err) {
+      setShowInfoConfirm(false);
       setInfoMsg({ type: 'error', text: err.response?.data?.error || '수정에 실패했습니다.' });
     }
     setInfoSaving(false);
@@ -322,7 +336,7 @@ export default function MyPage() {
                 <div className="spinner" style={{ margin: '0 auto' }}/>
               </div>
             ) : (
-              <form onSubmit={saveInfo}>
+              <form onSubmit={askSaveInfo}>
                 <Alert type={infoMsg.type} msg={infoMsg.text}/>
                 <Field label="아이디 (변경 불가)">
                   <input className="form-control" value={profile.user_id} disabled
@@ -335,6 +349,11 @@ export default function MyPage() {
                 <Field label="이메일">
                   <input className="form-control" type="email" value={profile.email} maxLength={100}
                     onChange={e => setProfile(p => ({ ...p, email: e.target.value }))} required/>
+                </Field>
+                <Field label="휴대폰 번호">
+                  <input className="form-control" type="tel" value={profile.phone || ''} maxLength={20}
+                    placeholder="01012345678"
+                    onChange={e => setProfile(p => ({ ...p, phone: e.target.value }))} required/>
                 </Field>
                 <button className="btn btn-primary w-100 mt-2" type="submit" disabled={infoSaving}>
                   {infoSaving ? '저장 중...' : '정보 저장'}
@@ -683,6 +702,64 @@ export default function MyPage() {
           </div>
         );
       })()}
+
+      {/* 기본 정보 저장 확인 모달 */}
+      {showInfoConfirm && (
+        <div onClick={() => !infoSaving && setShowInfoConfirm(false)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+          }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-2)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)',
+              padding: 24, maxWidth: 380, width: '100%', boxShadow: 'var(--menu-shadow, 0 8px 30px rgba(0,0,0,0.2))',
+            }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <i className="bi bi-question-circle-fill" style={{ fontSize: '1.3rem', color: 'var(--accent)' }}/>
+              <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--fg-1)' }}>정보 저장</div>
+            </div>
+            <div style={{ fontSize: '0.86rem', color: 'var(--fg-2)', lineHeight: 1.65, marginBottom: 18 }}>
+              변경한 내용을 저장하시겠습니까?
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" className="btn" onClick={() => setShowInfoConfirm(false)} disabled={infoSaving}
+                style={{ flex: 1, background: 'var(--bg-3)', border: '1px solid var(--line-1)', color: 'var(--fg-2)' }}>
+                취소
+              </button>
+              <button type="button" className="btn btn-primary" onClick={doSaveInfo} disabled={infoSaving} style={{ flex: 1 }}>
+                {infoSaving ? '저장 중...' : '저장'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 기본 정보 변경 완료 모달 */}
+      {showInfoDone && (
+        <div onClick={() => setShowInfoDone(false)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+          }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-2)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)',
+              padding: 24, maxWidth: 380, width: '100%', boxShadow: 'var(--menu-shadow, 0 8px 30px rgba(0,0,0,0.2))',
+            }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <i className="bi bi-check-circle-fill" style={{ fontSize: '1.3rem', color: 'var(--up)' }}/>
+              <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--fg-1)' }}>변경 완료</div>
+            </div>
+            <div style={{ fontSize: '0.86rem', color: 'var(--fg-2)', lineHeight: 1.65, marginBottom: 18 }}>
+              정보가 변경되었습니다.
+            </div>
+            <button type="button" className="btn btn-primary w-100" onClick={() => setShowInfoDone(false)}>
+              확인
+            </button>
+          </div>
+        </div>
+      )}
     </StockLayout>
   );
 }

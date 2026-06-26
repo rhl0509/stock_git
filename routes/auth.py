@@ -1,3 +1,4 @@
+import re
 import time as _time
 import logging
 from collections import defaultdict
@@ -38,6 +39,15 @@ def _reset_attempts(identifier: str):
     _login_attempts.pop(identifier, None)
 
 
+def _normalize_phone(raw: str) -> str | None:
+    """휴대폰 번호를 숫자만 남겨 정규화. 한국 휴대폰(01X-XXXX(X)-XXXX, 10~11자리)만 허용.
+    유효하지 않으면 None. 결제(PG)·구매자 식별에 쓰이므로 형식을 강제한다."""
+    digits = re.sub(r'\D', '', raw or '')
+    if re.fullmatch(r'01[016789]\d{7,8}', digits):
+        return digits
+    return None
+
+
 def _check_password(pwhash: str, password: str) -> bool:
     """werkzeug(scrypt/pbkdf2) + bcrypt($2a/$2b) 두 형식 모두 지원."""
     if not pwhash:
@@ -64,8 +74,9 @@ def register(request: Request, data: dict = Body(default={})):
     password = data.get('password', '')
     name     = (data.get('name') or '').strip()
     email    = (data.get('email') or '').strip()
+    phone    = (data.get('phone') or '').strip()
 
-    if not all([user_id, password, name, email]):
+    if not all([user_id, password, name, email, phone]):
         return JSONResponse({"error": "모든 필드를 입력해주세요."}, status_code=400)
     if len(user_id) < 3 or len(user_id) > 30:
         return JSONResponse({"error": "아이디는 3~30자여야 합니다."}, status_code=400)
@@ -73,6 +84,9 @@ def register(request: Request, data: dict = Body(default={})):
         return JSONResponse({"error": "비밀번호는 8자 이상이어야 합니다."}, status_code=400)
     if '@' not in email:
         return JSONResponse({"error": "유효한 이메일 주소를 입력하세요."}, status_code=400)
+    phone = _normalize_phone(phone)
+    if not phone:
+        return JSONResponse({"error": "유효한 휴대폰 번호를 입력하세요."}, status_code=400)
 
     hashed_password = generate_password_hash(password)
     conn = get_db_connection()
@@ -82,8 +96,8 @@ def register(request: Request, data: dict = Body(default={})):
             if cursor.fetchone():
                 return JSONResponse({"error": "이미 존재하는 아이디입니다."}, status_code=409)
             cursor.execute(
-                "INSERT INTO members (user_id, password_hash, name, email, role, status) VALUES (%s, %s, %s, %s, 'free', 'active')",
-                (user_id, hashed_password, name, email)
+                "INSERT INTO members (user_id, password_hash, name, email, phone, role, status) VALUES (%s, %s, %s, %s, %s, 'free', 'active')",
+                (user_id, hashed_password, name, email, phone)
             )
         conn.commit()
         return JSONResponse({"message": "회원가입이 완료되었습니다! 로그인해주세요."}, status_code=201)
@@ -199,6 +213,7 @@ def update_profile(request: Request, data: dict = Body(default={})):
         return JSONResponse({"error": "로그인 필요"}, status_code=401)
     name   = data.get('name', '').strip()
     email  = data.get('email', '').strip()
+    phone  = (data.get('phone') or '').strip()
     new_pw = data.get('new_password', '').strip()
     cur_pw = data.get('current_password', '').strip()
 
@@ -207,6 +222,9 @@ def update_profile(request: Request, data: dict = Body(default={})):
     # 가입 시 필수 필드인 이메일을 빈 값으로 덮어쓰지 못하게 막음
     if not email or '@' not in email:
         return JSONResponse({"error": "유효한 이메일 주소를 입력하세요."}, status_code=400)
+    phone = _normalize_phone(phone)
+    if not phone:
+        return JSONResponse({"error": "유효한 휴대폰 번호를 입력하세요."}, status_code=400)
     if new_pw and len(new_pw) < 8:
         return JSONResponse({"error": "새 비밀번호는 8자 이상이어야 합니다."}, status_code=400)
 
@@ -223,13 +241,13 @@ def update_profile(request: Request, data: dict = Body(default={})):
                     return JSONResponse({"error": "현재 비밀번호가 틀립니다."}, status_code=400)
                 hashed = generate_password_hash(new_pw)
                 cursor.execute(
-                    "UPDATE members SET name=%s, email=%s, password_hash=%s WHERE id=%s",
-                    (name, email, hashed, request.session['user_no'])
+                    "UPDATE members SET name=%s, email=%s, phone=%s, password_hash=%s WHERE id=%s",
+                    (name, email, phone, hashed, request.session['user_no'])
                 )
             else:
                 cursor.execute(
-                    "UPDATE members SET name=%s, email=%s WHERE id=%s",
-                    (name, email, request.session['user_no'])
+                    "UPDATE members SET name=%s, email=%s, phone=%s WHERE id=%s",
+                    (name, email, phone, request.session['user_no'])
                 )
         conn.commit()
         request.session['user_name'] = name
@@ -252,7 +270,7 @@ def get_profile(request: Request):
     try:
         with conn.cursor() as cursor:
             cursor.execute(
-                "SELECT id, user_id, name, email, DATE_FORMAT(created_at,'%%Y-%%m-%%d') AS created_at "
+                "SELECT id, user_id, name, email, phone, DATE_FORMAT(created_at,'%%Y-%%m-%%d') AS created_at "
                 "FROM members WHERE id=%s", (request.session['user_no'],))
             row = cursor.fetchone()
         if not row:
@@ -268,15 +286,19 @@ def put_profile(request: Request, data: dict = Body(default={})):
         return JSONResponse({"error": "로그인 필요"}, status_code=401)
     name  = (data.get('name') or '').strip()
     email = (data.get('email') or '').strip()
+    phone = (data.get('phone') or '').strip()
     if not name:
         return JSONResponse({"error": "이름을 입력해주세요."}, status_code=400)
     if not email or '@' not in email:
         return JSONResponse({"error": "유효한 이메일 주소를 입력하세요."}, status_code=400)
+    phone = _normalize_phone(phone)
+    if not phone:
+        return JSONResponse({"error": "유효한 휴대폰 번호를 입력하세요."}, status_code=400)
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("UPDATE members SET name=%s, email=%s WHERE id=%s",
-                           (name, email, request.session['user_no']))
+            cursor.execute("UPDATE members SET name=%s, email=%s, phone=%s WHERE id=%s",
+                           (name, email, phone, request.session['user_no']))
         conn.commit()
         request.session['user_name'] = name
         return JSONResponse({"message": "정보가 수정되었습니다."})

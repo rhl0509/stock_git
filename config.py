@@ -29,9 +29,12 @@ class Config:
     #   PORTONE_STORE_ID    : 상점 식별자 (프론트 SDK / 결제창에 사용)
     #   PORTONE_CHANNEL_KEY : 결제 채널 키 (프론트 결제창 requestPayment 에 사용)
     #   PORTONE_API_SECRET  : V2 REST API 시크릿 (서버 결제검증에 사용)
-    PORTONE_STORE_ID    = os.getenv('PORTONE_STORE_ID', '')
-    PORTONE_CHANNEL_KEY = os.getenv('PORTONE_CHANNEL_KEY', '')
-    PORTONE_API_SECRET  = os.getenv('PORTONE_API_SECRET', '')
+    #   PORTONE_WEBHOOK_SECRET : V2 웹훅 서명 검증 시크릿(whsec_...). 결제완료 통지 위·변조 차단.
+    #                            비어 있으면 웹훅을 모두 거부(서명 검증 불가)하므로 실결제 전 반드시 설정.
+    PORTONE_STORE_ID      = os.getenv('PORTONE_STORE_ID', '')
+    PORTONE_CHANNEL_KEY   = os.getenv('PORTONE_CHANNEL_KEY', '')
+    PORTONE_API_SECRET    = os.getenv('PORTONE_API_SECRET', '')
+    PORTONE_WEBHOOK_SECRET = os.getenv('PORTONE_WEBHOOK_SECRET', '')
 
     # Claude(유료) AI 챗봇 — 키가 없으면 챗봇 비활성화.
     #   ANTHROPIC_API_KEY  : Anthropic API 키 (없으면 챗봇 OFF)

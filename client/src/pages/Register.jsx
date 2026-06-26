@@ -4,7 +4,7 @@ import api from '../api/index.js';
 
 export default function Register() {
   const navigate = useNavigate();
-  const [form, setForm]   = useState({ user_id: '', name: '', email: '', password: '' });
+  const [form, setForm]   = useState({ user_id: '', name: '', email: '', phone: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -14,6 +14,7 @@ export default function Register() {
     if (form.user_id.length < 3) return setError('아이디는 3자 이상이어야 합니다.');
     if (form.password.length < 6) return setError('비밀번호는 6자 이상이어야 합니다.');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return setError('올바른 이메일 형식이 아닙니다.');
+    if (!/^01[016789]\d{7,8}$/.test(form.phone.replace(/\D/g, ''))) return setError('올바른 휴대폰 번호를 입력하세요.');
     setError(''); setLoading(true);
     try {
       await api.post('/auth/register', form);
@@ -47,9 +48,10 @@ export default function Register() {
           {error && <div className="alert alert-danger" style={{ fontSize:'0.83rem', padding:'10px 14px', marginBottom:16 }}>{error}</div>}
           <form onSubmit={submit}>
             {field('user_id',  '아이디',   'text',     '영문/숫자 조합')}
-            {field('name',     '이름',     'text',     '이름을 입력하세요')}
-            {field('email',    '이메일',   'email',    'example@email.com')}
-            {field('password', '비밀번호', 'password', '6자 이상 입력하세요')}
+            {field('name',     '이름',       'text',     '이름을 입력하세요')}
+            {field('email',    '이메일',     'email',    'example@email.com')}
+            {field('phone',    '휴대폰 번호', 'tel',      '01012345678')}
+            {field('password', '비밀번호',   'password', '6자 이상 입력하세요')}
             <button className="btn btn-primary w-100 mt-1" type="submit" disabled={loading}>
               {loading ? '처리 중...' : '회원가입'}
             </button>
