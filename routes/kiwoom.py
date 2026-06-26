@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request, Depends, Body
-from routes.utils import require_login_smart
+from routes.utils import require_login_smart, require_owner
 from fastapi.responses import JSONResponse
 from kiwoom_client import kiwoom, fetch_market_session
 import urllib.request
@@ -386,7 +386,7 @@ def get_investor_trend(code: str, request: Request):
         return JSONResponse({"error": '서버 오류가 발생했습니다.'}, status_code=500)
 
 
-@router.get('/kiwoom/conditions')
+@router.get('/kiwoom/conditions', dependencies=[Depends(require_owner)])
 def get_conditions():
     try:
         if kiwoom.get_login_state() != 1:
@@ -399,7 +399,7 @@ def get_conditions():
         return JSONResponse({"error": '서버 오류가 발생했습니다.'}, status_code=500)
 
 
-@router.post('/kiwoom/condition/run')
+@router.post('/kiwoom/condition/run', dependencies=[Depends(require_owner)])
 def run_condition(request: Request, body: dict = Body(default={})):
     try:
         if kiwoom.get_login_state() != 1:
@@ -423,7 +423,7 @@ def run_condition(request: Request, body: dict = Body(default={})):
         return JSONResponse({"error": '서버 오류가 발생했습니다.'}, status_code=500)
 
 
-@router.get('/kiwoom/deposit')
+@router.get('/kiwoom/deposit', dependencies=[Depends(require_owner)])
 def get_deposit():
     try:
         if kiwoom.get_login_state() != 1:
@@ -578,7 +578,7 @@ def theme_index_status():
     return {"status": "idle"}
 
 
-@router.get('/kiwoom/period-trades')
+@router.get('/kiwoom/period-trades', dependencies=[Depends(require_owner)])
 def kiwoom_period_trades(request: Request):
     date_from = request.query_params.get('from', '')
     date_to   = request.query_params.get('to', '')

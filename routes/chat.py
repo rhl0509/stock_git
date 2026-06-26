@@ -5,14 +5,16 @@
 """
 import logging
 
-from fastapi import APIRouter, Request, Body
+from fastapi import APIRouter, Request, Body, Depends
 from fastapi.responses import JSONResponse
+
+from routes.tier import require_feature
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.post('/api/chat/ask')
+@router.post('/api/chat/ask', dependencies=[Depends(require_feature('chat'))])
 def ask(request: Request, data: dict = Body(default={})):
     if 'user_no' not in request.session:
         return JSONResponse({"error": "로그인 필요"}, status_code=401)

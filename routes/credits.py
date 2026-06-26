@@ -157,11 +157,15 @@ def get_balance(request: Request):
     try:
         with conn.cursor() as cur:
             bal = _get_balance(cur, request.session['user_no'])
+        from routes.utils import is_owner
+        from routes.tier import effective_role
         return JSONResponse({
             "balance":      bal,
             "mock":         _is_mock(),
             "chat_enabled": bool(Config.ANTHROPIC_API_KEY),
             "chat_cost":    Config.CHAT_CREDIT_COST,
+            "role":         effective_role(request),
+            "is_owner":     is_owner(request),
         })
     finally:
         conn.close()
@@ -283,7 +287,13 @@ def charge_verify(request: Request, data: dict = Body(default={})):
             new_bal = _apply_delta(cur, user_no, 'charge', int(pay['credits']),
                                    payment_id, f"크레딧 {expected:,}원 충전")
         conn.commit()
-        return JSONResponse({"status": "paid", "balance": new_bal, "charged": int(pay['credits'])})
+        # 충전 성공 → free 면 basic 으로 자동 승급(세션도 즉시 갱신).
+        from routes.tier import promote_on_charge
+        promoted = promote_on_charge(user_no)
+        if promoted:
+            request.session['role'] = promoted
+        return JSONResponse({"status": "paid", "balance": new_bal,
+                             "charged": int(pay['credits']), "promoted_to": promoted})
     except Exception as e:
         conn.rollback()
         logger.error(f"[credits/verify] {e}", exc_info=True)

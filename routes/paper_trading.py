@@ -264,9 +264,9 @@ def api_log(request: Request):
     return {'logs': logs}
 
 
-# NOTE: /stock_dashboard 페이지 라우트는 app.py에 정의 (여기 중복 정의 시 인증이 우회됨)
-@router.get("/api/stock_dashboard")
-def api_stock_dashboard():
+# NOTE: /stock_main 페이지 라우트는 app.py에 정의 (여기 중복 정의 시 인증이 우회됨)
+@router.get("/api/stock_main")
+def api_stock_main():
     summary = get_summary()
 
     recommend = {}

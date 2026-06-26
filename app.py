@@ -22,7 +22,8 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from config import Config
 from templates_config import render
-from routes.utils import require_login, LoginRequired, ApiLoginRequired
+from routes.utils import require_login, LoginRequired, ApiLoginRequired, OwnerOnly
+from routes.tier import TierRequired
 
 # ── 라우터 import ──
 from routes.auth import router as auth_router
@@ -104,6 +105,18 @@ async def _login_required_handler(request: Request, exc: LoginRequired):
 async def _api_login_required_handler(request: Request, exc: ApiLoginRequired):
     return JSONResponse({"error": "로그인이 필요합니다."}, status_code=401)
 
+@app.exception_handler(OwnerOnly)
+async def _owner_only_handler(request: Request, exc: OwnerOnly):
+    return JSONResponse({"error": "이 기능은 계정 소유자만 사용할 수 있습니다."}, status_code=403)
+
+@app.exception_handler(TierRequired)
+async def _tier_required_handler(request: Request, exc: TierRequired):
+    return JSONResponse(
+        {"error": "상위 등급에서만 사용할 수 있는 기능입니다.",
+         "need": exc.need, "have": exc.have, "feature": exc.feature},
+        status_code=403,
+    )
+
 @app.exception_handler(404)
 async def _not_found_handler(request: Request, exc):
     if "application/json" in request.headers.get("accept", ""):
@@ -177,9 +190,9 @@ async def register_page(request: Request):
 async def index(request: Request, _=Depends(require_login)):
     return RedirectResponse(url="/stock_live", status_code=302)
 
-@app.get("/stock_dashboard")
-async def stock_dashboard(request: Request, _=Depends(require_login)):
-    return render(request, "stock/stock_dashboard.html")
+@app.get("/stock_main")
+async def stock_main(request: Request, _=Depends(require_login)):
+    return render(request, "stock/stock_main.html")
 
 @app.get("/stock_live")
 async def stock_live_page(request: Request, _=Depends(require_login)):
@@ -216,10 +229,6 @@ async def stock_kiwoom_filter_page(request: Request, _=Depends(require_login)):
 @app.get("/stock_theme_filter")
 async def stock_theme_filter_page(request: Request, _=Depends(require_login)):
     return render(request, "stock/stock_theme_filter.html")
-
-@app.get("/stock_recommend_history")
-async def stock_recommend_history_page(request: Request, _=Depends(require_login)):
-    return render(request, "stock/recommend_history.html")
 
 @app.get("/stock_ai_performance")
 async def stock_ai_performance_page(request: Request, _=Depends(require_login)):

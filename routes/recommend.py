@@ -41,7 +41,6 @@ def _override_names(items: list) -> list:
 ROOT        = Path(__file__).parent.parent
 MODEL_DIR   = ROOT / 'XGBoost_v2' / 'model'
 HISTORY_DIR = MODEL_DIR / 'recommend_history'
-HISTORY_DIR_ABS = MODEL_DIR / 'recommend_history_abs'
 OHLCV_DIR   = ROOT / 'XGBoost_v2' / 'data' / 'ohlcv'
 
 
@@ -124,95 +123,6 @@ def recommend_stock(code: str, request: Request):
         logger.error(f"[recommend/stock] {e}")
         logger.error(f'[recommend] {e}', exc_info=True)
         return JSONResponse({"ok": False, "error": '서버 오류가 발생했습니다.'}, status_code=500)
-
-
-@router.get('/recommend/history')
-def recommend_history_list():
-    if not HISTORY_DIR.exists():
-        return {"ok": True, "dates": []}
-    dates = sorted([p.stem for p in HISTORY_DIR.glob("*.json")], reverse=True)
-    return {"ok": True, "count": len(dates), "dates": dates}
-
-
-@router.get('/recommend/history/{date}')
-def recommend_history_item(date: str):
-    path = HISTORY_DIR / f'{date}.json'
-    if not path.exists():
-        return JSONResponse({"ok": False, "error": "해당 날짜 데이터 없음"}, status_code=404)
-    with open(path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    return {"ok": True, "date": date, **data}
-
-
-@router.get('/recommend_abs/history')
-def recommend_abs_history_list():
-    if not HISTORY_DIR_ABS.exists():
-        return {"ok": True, "dates": []}
-    dates = sorted([p.stem for p in HISTORY_DIR_ABS.glob("*.json")], reverse=True)
-    return {"ok": True, "count": len(dates), "dates": dates}
-
-
-@router.get('/recommend_abs/history/{date}')
-def recommend_abs_history_item(date: str):
-    path = HISTORY_DIR_ABS / f'{date}.json'
-    if not path.exists():
-        return JSONResponse({"ok": False, "error": "해당 날짜 데이터 없음"}, status_code=404)
-    with open(path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    return {"ok": True, "date": date, **data}
-
-
-@router.get('/recommend/stats')
-def recommend_stats(request: Request):
-    days_str = request.query_params.get('days', '10')
-    days = int(days_str)
-    if not HISTORY_DIR.exists():
-        return {"ok": True, "stats": []}
-
-    files = sorted(list(HISTORY_DIR.glob("*.json")), reverse=True)[:days]
-
-    stock_stats = {}
-    for file in files:
-        date_str = file.stem
-        try:
-            with open(file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-        except Exception:
-            continue
-
-        for category in ['daily', 'short', 'swing']:
-            for item in data.get(category, []):
-                code = item.get('code')
-                if not code:
-                    continue
-                if code not in stock_stats:
-                    stock_stats[code] = {
-                        'code': code,
-                        'name': item.get('name', code),
-                        'market': item.get('market', ''),
-                        'count': 0,
-                        'dates': [],
-                        'categories': set()
-                    }
-                stock_stats[code]['count'] += 1
-                stock_stats[code]['dates'].append(date_str)
-                stock_stats[code]['categories'].add(category)
-
-    result_list = []
-    for code, stats in stock_stats.items():
-        if stats['count'] > 1:
-            stats['categories'] = list(stats['categories'])
-            stats['dates'] = sorted(list(set(stats['dates'])), reverse=True)
-            stats['recent_date'] = stats['dates'][0]
-            result_list.append(stats)
-
-    result_list.sort(key=lambda x: (x['count'], x['recent_date']), reverse=True)
-
-    return {
-        "ok": True,
-        "analyzed_days": len(files),
-        "stats": result_list
-    }
 
 
 @router.get('/recommend/backtest')

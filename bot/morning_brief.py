@@ -95,7 +95,7 @@ def send_morning_brief() -> bool:
     try:
         from notify.send import send_message_to_self
         port = int(os.getenv('FLASK_PORT', '5000'))
-        return send_message_to_self(msg, link_url=f"http://localhost:{port}/stock_recommend_history")
+        return send_message_to_self(msg, link_url=f"http://localhost:{port}/recommend")
     except Exception as e:
         logger.error(f"카카오톡 발송 실패: {e}")
         return False

@@ -93,7 +93,7 @@
 <script>
 async function loadDashboard() {
   try {
-    const res  = await fetch('/api/stock_dashboard');
+    const res  = await fetch('/api/stock_main');
     const data = await res.json();
     render(data);
   } catch(e) {
@@ -209,7 +209,6 @@ function render(data) {
         <a href="/quant"                   class="link-card"><i class="bi bi-bar-chart-steps"></i>퀀트 트레이딩</a>
         <a href="/portfolio_opt"           class="link-card"><i class="bi bi-pie-chart"></i>포트폴리오 최적화</a>
         <a href="/stock_filter"            class="link-card"><i class="bi bi-funnel"></i>종목 필터</a>
-        <a href="/stock_recommend_history" class="link-card"><i class="bi bi-collection"></i>추천 기록</a>
         <a href="/train_report"            class="link-card"><i class="bi bi-file-bar-graph"></i>학습 리포트</a>
         <a href="/stock_portfolio_kr"      class="link-card"><i class="bi bi-briefcase"></i>포트폴리오</a>
       </div>

@@ -2,7 +2,7 @@ import logging
 from fastapi import APIRouter, Request, Depends, Body
 from fastapi.responses import JSONResponse
 from database.db_connection import get_db_connection
-from routes.utils import api_require_login, get_user_no
+from routes.utils import api_require_login, get_user_no, require_owner, is_owner_user_no
 from kiwoom_client import kiwoom
 from datetime import datetime as _dt, timedelta as _timedelta
 import time as _time
@@ -242,6 +242,10 @@ def _fetch_realized_chunked(now_dt) -> dict:
 def do_kiwoom_sync(user_no: int) -> dict:
     """키움 계좌 → DB 동기화 핵심 로직. 라우트와 자동화 잡(auto_jobs)에서 공용.
     반환: {"ok": bool, "error"?: str, "count"?, "trade_synced"?, "deposit"?}"""
+    # 키움 콜렉터는 주인 단일계좌에 묶여 있다. 비소유자 user_no 로 동기화하면 주인 계좌가
+    # 그 회원 행에 덮어써져(사생활 유출+데이터 오염) 위험하므로 소유자만 허용.
+    if not is_owner_user_no(user_no):
+        return {"ok": False, "error": "키움 계좌 동기화는 계정 소유자만 가능합니다."}
     if kiwoom.get_login_state() != 1:
         return {"ok": False, "error": "키움 API에 로그인되어 있지 않습니다."}
 
@@ -307,7 +311,7 @@ def do_kiwoom_sync(user_no: int) -> dict:
         conn.close()
 
 
-@router.post('/stock/sync', dependencies=[Depends(api_require_login)])
+@router.post('/stock/sync', dependencies=[Depends(require_owner)])
 def sync_from_kiwoom(request: Request):
     user_no = get_user_no(request)
     try:
@@ -522,7 +526,9 @@ def get_realized_pnl(request: Request):
     today_kw  = _dt.now().strftime('%Y%m%d')
     since_kw  = (_dt.now() - timedelta(days=90)).strftime('%Y%m%d')
 
-    if kiwoom.get_login_state() == 1:
+    # 키움 실현손익은 주인 단일계좌 데이터다. 소유자만 키움 분기를 타고,
+    # 그 외 회원은 자신의 거래내역(stock_transactions) 기반 DB 계산으로 폴백.
+    if is_owner_user_no(user_no) and kiwoom.get_login_state() == 1:
         full = kiwoom.get_realized_pnl(since_kw, today_kw)
         if full is not None:
             try:

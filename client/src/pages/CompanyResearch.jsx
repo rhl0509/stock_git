@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import StockLayout from '../layouts/StockLayout.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
 import api from '../api/index.js';
 
 const ADVISOR_COST = 500;
@@ -148,7 +150,12 @@ export default function CompanyResearch() {
   const [balance,  setBalance]  = useState(null);
   const [error,    setError]    = useState('');
   const [loading,  setLoading]  = useState(false);
+  const [tierGate, setTierGate] = useState(false);
   const timerRef = useRef(null);
+  const { user }  = useAuth();
+  const navigate  = useNavigate();
+  // ai_access 가 있으면 그 값으로, 없으면(구버전 응답) 허용해 서버 판정에 맡긴다.
+  const canUseAdvisor = !user?.ai_access || user.ai_access.advisor !== false;
 
   useEffect(() => () => clearTimeout(timerRef.current), []);
 
@@ -168,6 +175,7 @@ export default function CompanyResearch() {
 
   const analyze = useCallback(async () => {
     if (!selected || loading) return;
+    if (!canUseAdvisor) { setTierGate(true); return; }
     setLoading(true); setText(''); setMeta(null); setError(''); setCost(null); setBalance(null);
     try {
       const r = await api.post('/stock/advisor/analyze', { code: selected.code, name: selected.name });
@@ -176,13 +184,15 @@ export default function CompanyResearch() {
       setCost(r.data.cost); setBalance(r.data.balance);
     } catch (e) {
       const d = e.response?.data;
-      if (e.response?.status === 402)
+      if (e.response?.status === 403 && d?.need)
+        setTierGate(true);                       // 등급 부족(세션/ai_access staleness 대비)
+      else if (e.response?.status === 402)
         setError(`${d?.error || '크레딧이 부족합니다.'} (보유 ${d?.balance ?? 0}C / 필요 ${d?.cost ?? 0}C)`);
       else
         setError(d?.error || 'AI 분석에 실패했습니다.');
     }
     setLoading(false);
-  }, [selected, loading]);
+  }, [selected, loading, canUseAdvisor]);
 
   const hasSidebar = meta?.kiwoom || meta?.ml || meta?.consensus || meta?.dart;
 
@@ -278,6 +288,39 @@ export default function CompanyResearch() {
           </p>
           <div style={{ marginTop: 16, fontSize: '0.75rem', background: 'var(--bg-2)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-2)', padding: '8px 14px', display: 'inline-block' }}>
             <i className="bi bi-coin me-1" />분석 1회당 {ADVISOR_COST}C가 차감됩니다.
+          </div>
+        </div>
+      )}
+
+      {tierGate && (
+        <div onClick={() => setTierGate(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000,
+                   display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: 'var(--bg-2)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)',
+                     padding: 24, maxWidth: 380, width: '100%', boxShadow: 'var(--menu-shadow, 0 8px 30px rgba(0,0,0,0.2))' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <i className="bi bi-stars" style={{ fontSize: '1.3rem', color: 'var(--accent)' }} />
+              <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--fg-1)' }}>베이직 등급 기능</div>
+            </div>
+            <div style={{ fontSize: '0.86rem', color: 'var(--fg-2)', lineHeight: 1.65, marginBottom: 12 }}>
+              <b style={{ color: 'var(--fg-1)' }}>종목 AI 분석</b>은 <b style={{ color: 'var(--accent)' }}>베이직</b> 등급부터 이용할 수 있어요.
+            </div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--fg-3)', lineHeight: 1.65, marginBottom: 18,
+                          padding: '10px 12px', background: 'var(--bg-3)', borderRadius: 'var(--r-2)' }}>
+              크레딧을 한 번이라도 충전하면 자동으로 베이직 등급이 되어 바로 사용할 수 있어요.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" className="btn" onClick={() => setTierGate(false)}
+                style={{ flex: 1, background: 'var(--bg-3)', border: '1px solid var(--line-1)', color: 'var(--fg-2)' }}>
+                닫기
+              </button>
+              <button type="button" className="btn btn-primary"
+                onClick={() => { setTierGate(false); navigate('/my-page'); }}
+                style={{ flex: 1 }}>
+                충전하기
+              </button>
+            </div>
           </div>
         </div>
       )}

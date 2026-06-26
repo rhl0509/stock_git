@@ -8,11 +8,12 @@ import logging
 from datetime import datetime, timedelta, time
 
 import pytz
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse
 
 from database.db_connection import get_db_connection
 from config import Config
+from routes.tier import require_feature
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -100,7 +101,7 @@ def pass_status(request: Request):
     return JSONResponse(_status_payload(request.session['user_no']))
 
 
-@router.post('/api/recommend-pass/enable')
+@router.post('/api/recommend-pass/enable', dependencies=[Depends(require_feature('recommend_pass'))])
 def pass_enable(request: Request):
     """AI 추천받기 ON. 오늘 첫 활성화면 크레딧 차감, 이미 결제일이면 재차감 없이 켜기만.
 

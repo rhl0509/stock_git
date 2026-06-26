@@ -82,7 +82,7 @@ def register(request: Request, data: dict = Body(default={})):
             if cursor.fetchone():
                 return JSONResponse({"error": "이미 존재하는 아이디입니다."}, status_code=409)
             cursor.execute(
-                "INSERT INTO members (user_id, password_hash, name, email, role, status) VALUES (%s, %s, %s, %s, 'user', 'active')",
+                "INSERT INTO members (user_id, password_hash, name, email, role, status) VALUES (%s, %s, %s, %s, 'free', 'active')",
                 (user_id, hashed_password, name, email)
             )
         conn.commit()
@@ -126,7 +126,7 @@ def login(request: Request, data: dict = Body(default={})):
     try:
         with conn.cursor() as cursor:
             cursor.execute(
-                "SELECT id, user_id, password_hash, name FROM members WHERE user_id = %s AND status = 'active'",
+                "SELECT id, user_id, password_hash, name, role FROM members WHERE user_id = %s AND status = 'active'",
                 (user_id,)
             )
             user = cursor.fetchone()
@@ -135,6 +135,7 @@ def login(request: Request, data: dict = Body(default={})):
                 request.session['user_no']   = user['id']
                 request.session['user_id']   = user['user_id']
                 request.session['user_name'] = user['name']
+                request.session['role']      = user.get('role') or 'free'
                 return JSONResponse({"message": "로그인 성공"}, status_code=200)
             else:
                 return JSONResponse({"error": "아이디 또는 비밀번호가 틀립니다."}, status_code=401)
@@ -166,18 +167,27 @@ def api_me(request: Request):
     try:
         with conn.cursor() as cursor:
             cursor.execute(
-                "SELECT id, user_id, name, email FROM members WHERE id=%s",
+                "SELECT id, user_id, name, email, role FROM members WHERE id=%s",
                 (request.session['user_no'],)
             )
             row = cursor.fetchone()
         if not row:
             return JSONResponse({"error": "사용자 없음"}, status_code=404)
+        role = row.get('role') or 'free'
+        from routes.utils import is_owner
+        from routes.tier import AI_FEATURE_MIN_TIER, has_tier
+        # 프론트가 등급/AI잠금 상태로 버튼 노출을 제어할 수 있게 내려준다.
+        ai_access = {feat: has_tier(request, AI_FEATURE_MIN_TIER[feat])
+                     for feat in AI_FEATURE_MIN_TIER}
         return JSONResponse({
             "id":       row['id'],
             "user_id":  row['user_id'],
             "name":     row['name'],
             "user_name": row['name'],   # Sidebar 호환
             "email":    row.get('email', ''),
+            "role":     'admin' if is_owner(request) else role,
+            "is_owner": is_owner(request),
+            "ai_access": ai_access,
         })
     finally:
         conn.close()

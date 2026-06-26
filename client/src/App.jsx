@@ -8,7 +8,7 @@ const Register        = lazy(() => import('./pages/Register.jsx'));
 const FindAccount     = lazy(() => import('./pages/FindAccount.jsx'));
 const ResetPassword   = lazy(() => import('./pages/ResetPassword.jsx'));
 const MyPage          = lazy(() => import('./pages/MyPage.jsx'));
-const StockDashboard  = lazy(() => import('./pages/StockDashboard.jsx'));
+const StockMain       = lazy(() => import('./pages/StockMain.jsx'));
 const StockLive       = lazy(() => import('./pages/StockLive.jsx'));
 const StockDetail     = lazy(() => import('./pages/StockDetail.jsx'));
 const StockCompareV2  = lazy(() => import('./pages/StockCompareV2.jsx'));
@@ -23,7 +23,6 @@ const StockKiwoomFilter= lazy(() => import('./pages/StockKiwoomFilter.jsx'));
 const StockThemeFilter= lazy(() => import('./pages/StockThemeFilter.jsx'));
 const Recommend       = lazy(() => import('./pages/Recommend.jsx'));
 const RecommendAbs    = lazy(() => import('./pages/RecommendAbs.jsx'));
-const RecommendHistory= lazy(() => import('./pages/RecommendHistory.jsx'));
 const Backtest        = lazy(() => import('./pages/Backtest.jsx'));
 const Quant           = lazy(() => import('./pages/Quant.jsx'));
 const News            = lazy(() => import('./pages/News.jsx'));
@@ -78,7 +77,7 @@ export default function App() {
               <Route path="/my-page"     element={<ProtectedRoute><MyPage /></ProtectedRoute>} />
 
               {/* Public pages */}
-              <Route path="/stock_dashboard"   element={<StockDashboard />} />
+              <Route path="/stock_main"        element={<StockMain />} />
               <Route path="/stock_live"        element={<StockLive />} />
               <Route path="/stock_detail"      element={<StockDetail />} />
               <Route path="/stock_compare"     element={<Navigate to="/stock_compare_v2" replace />} />
@@ -99,7 +98,6 @@ export default function App() {
               <Route path="/stock_theme_filter" element={<ProtectedRoute><StockThemeFilter /></ProtectedRoute>} />
               <Route path="/recommend"          element={<ProtectedRoute><Recommend /></ProtectedRoute>} />
               <Route path="/recommend_abs"      element={<ProtectedRoute><Recommend /></ProtectedRoute>} />
-              <Route path="/stock_recommend_history" element={<ProtectedRoute><RecommendHistory /></ProtectedRoute>} />
               <Route path="/stock_ai_performance" element={<Navigate to="/train_report" replace />} />
               <Route path="/backtest"           element={<ProtectedRoute><Backtest /></ProtectedRoute>} />
               <Route path="/quant"              element={<ProtectedRoute><Quant /></ProtectedRoute>} />

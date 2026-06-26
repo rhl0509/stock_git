@@ -644,7 +644,7 @@
         <div class="nav-section">
             <span class="nav-section-label">시장</span>
             <ul class="list-unstyled mb-0">
-                <li><a href="/stock_dashboard" class="sidebar-nav-link {% if request.path == '/stock_dashboard' %}active{% endif %}"><i class="bi bi-house"></i>홈</a></li>
+                <li><a href="/stock_main" class="sidebar-nav-link {% if request.path == '/stock_main' %}active{% endif %}"><i class="bi bi-house"></i>홈</a></li>
                 <li><a href="/stock_live"      class="sidebar-nav-link {% if request.path == '/stock_live' %}active{% endif %}"><i class="bi bi-graph-up-arrow"></i>실시간 시세</a></li>
                 <li><a href="/trade_stats"     class="sidebar-nav-link {% if request.path == '/trade_stats' %}active{% endif %}"><i class="bi bi-boxes"></i>수출입 동향</a></li>
                 <li><a href="/macro_dashboard" class="sidebar-nav-link {% if request.path == '/macro_dashboard' %}active{% endif %}"><i class="bi bi-globe2"></i>거시지표</a></li>
@@ -674,7 +674,6 @@
             <span class="nav-section-label" style="margin-top:14px;">AI · 전략</span>
             <ul class="list-unstyled mb-0">
                 <li><a href="/recommend"               class="sidebar-nav-link {% if request.path in ['/recommend', '/recommend_abs'] %}active{% endif %}"><i class="bi bi-stars"></i>AI 추천</a></li>
-                <li><a href="/stock_recommend_history" class="sidebar-nav-link {% if request.path == '/stock_recommend_history' %}active{% endif %}"><i class="bi bi-clock-history"></i>추천 기록</a></li>
                 <li>
                     <button onclick="openAdvisor()" class="sidebar-nav-link">
                         <i class="bi bi-lightbulb"></i><span>매수/매도 분석</span>

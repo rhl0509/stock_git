@@ -26,8 +26,19 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  // 등급/ai_access 가 서버에서 바뀐 뒤(예: 충전 자동 승급) 최신 상태로 다시 불러온다.
+  const refreshUser = async () => {
+    try {
+      const me = await api.get('/auth/me');
+      setUser(me.data);
+      return me.data;
+    } catch {
+      return null;
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

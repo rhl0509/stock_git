@@ -8,6 +8,14 @@ const TAB = { info: 'info', pw: 'pw', credit: 'credit' };
 
 const CHARGE_AMOUNTS = [5000, 10000, 30000, 50000, 100000];
 
+// AI 기능별 요구 등급(서버 AI_FEATURE_MIN_TIER 와 일치). 등급 미달 시 안내 모달에 사용.
+const FEATURE_META = {
+  chat:           { name: 'AI 챗봇',      need: 'basic' },
+  advisor:        { name: '종목 AI 분석',  need: 'basic' },
+  recommend_pass: { name: 'AI 추천받기',   need: 'premium' },
+};
+const TIER_KR = { free: '무료', basic: '베이직', premium: '프리미엄', pro: '프로' };
+
 // 포트원 V2 브라우저 SDK를 필요할 때만(실결제 모드) 동적 로드한다.
 function loadPortOne() {
   return new Promise((resolve, reject) => {
@@ -47,9 +55,14 @@ function Alert({ type, msg }) {
 }
 
 export default function MyPage() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const navigate  = useNavigate();
   const [tab, setTab] = useState(TAB.info);
+
+  // 등급 부족 안내 모달: null 이거나 막힌 기능 키('chat'|'advisor'|'recommend_pass').
+  const [tierGate, setTierGate] = useState(null);
+  // ai_access 정보가 있으면 해당 값으로, 없으면(구버전 응답) 허용해 서버 판정에 맡긴다.
+  const canUse = (feat) => !user?.ai_access || user.ai_access[feat] !== false;
 
   // 기본 정보
   const [profile, setProfile] = useState({ user_id: '', name: '', email: '', created_at: '' });
@@ -149,7 +162,8 @@ export default function MyPage() {
 
   const onTogglePass = () => {
     if (passBusy) return;
-    if (pass?.active) return disablePass();
+    if (pass?.active) return disablePass();          // 켜져 있으면 끄기(등급 무관)
+    if (!canUse('recommend_pass')) { setTierGate('recommend_pass'); return; }
     if (pass?.paid_today) return enablePass(); // 오늘 이미 결제 → 모달 없이 켜기
     setShowPassModal(true);                     // 신규 결제 → 경고 모달
   };
@@ -179,8 +193,10 @@ export default function MyPage() {
       }
       const ver = (await api.post('/api/credits/charge/verify', { payment_id: prep.payment_id })).data;
       if (ver.status === 'paid') {
-        setCreditMsg({ type: 'success', text: `${selAmount.toLocaleString()}원이 충전되었습니다.` });
+        const promoMsg = ver.promoted_to === 'basic' ? ' 베이직 등급으로 승급되어 AI 기능이 열렸습니다.' : '';
+        setCreditMsg({ type: 'success', text: `${selAmount.toLocaleString()}원이 충전되었습니다.${promoMsg}` });
         await loadCredit();
+        if (ver.promoted_to) await refreshUser(); // 등급 승급 시 ai_access 갱신
       } else {
         setCreditMsg({ type: 'error', text: '결제가 완료되지 않았습니다.' });
       }
@@ -193,6 +209,7 @@ export default function MyPage() {
   const sendChat = async () => {
     const q = chatInput.trim();
     if (!q || chatSending) return;
+    if (!canUse('chat')) { setTierGate('chat'); return; }
     setChatInput('');
     setChatLog(l => [...l, { role: 'user', text: q }]);
     setChatSending(true);
@@ -619,6 +636,53 @@ export default function MyPage() {
           </div>
         </div>
       )}
+
+      {/* 등급 부족 안내 모달 */}
+      {tierGate && (() => {
+        const meta = FEATURE_META[tierGate] || { name: '이 기능', need: 'basic' };
+        const needBasic = meta.need === 'basic';
+        return (
+          <div onClick={() => setTierGate(null)}
+            style={{
+              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+            }}>
+            <div onClick={e => e.stopPropagation()}
+              style={{
+                background: 'var(--bg-2)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-3)',
+                padding: 24, maxWidth: 380, width: '100%', boxShadow: 'var(--menu-shadow, 0 8px 30px rgba(0,0,0,0.2))',
+              }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                <i className="bi bi-stars" style={{ fontSize: '1.3rem', color: 'var(--accent)' }}/>
+                <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--fg-1)' }}>{TIER_KR[meta.need]} 등급 기능</div>
+              </div>
+              <div style={{ fontSize: '0.86rem', color: 'var(--fg-2)', lineHeight: 1.65, marginBottom: 12 }}>
+                <b style={{ color: 'var(--fg-1)' }}>{meta.name}</b>은(는) <b style={{ color: 'var(--accent)' }}>{TIER_KR[meta.need]}</b> 등급부터 이용할 수 있어요.
+              </div>
+              <div style={{
+                fontSize: '0.78rem', color: 'var(--fg-3)', lineHeight: 1.65, marginBottom: 18,
+                padding: '10px 12px', background: 'var(--bg-3)', borderRadius: 'var(--r-2)',
+              }}>
+                {needBasic
+                  ? '크레딧을 한 번이라도 충전하면 자동으로 베이직 등급이 되어 바로 사용할 수 있어요.'
+                  : '프리미엄 구독 시 이용할 수 있어요. (구독 기능 준비 중)'}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" className="btn" onClick={() => setTierGate(null)}
+                  style={{ flex: 1, background: 'var(--bg-3)', border: '1px solid var(--line-1)', color: 'var(--fg-2)' }}>
+                  닫기
+                </button>
+                {needBasic && (
+                  <button type="button" className="btn btn-primary" onClick={() => { setTierGate(null); setTab(TAB.credit); }}
+                    style={{ flex: 1 }}>
+                    충전하기
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </StockLayout>
   );
 }

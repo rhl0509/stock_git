@@ -5,6 +5,7 @@
 from fastapi import APIRouter, Request, Depends, Body
 from fastapi.responses import JSONResponse
 from routes.utils import api_require_login
+from routes.tier import require_feature
 from routes.advisor_data import _collect_analysis_data
 from config import Config
 import os
@@ -294,7 +295,7 @@ def _build_prompt(name, code, kw, yf, dart, kis, bok, consensus=None, ml=None, u
     ).replace('{stop_pct}', str(ui.get('stop_loss_pct', 10) if ui else 10))
 
 
-@router.post('/stock/advisor/analyze', dependencies=[Depends(api_require_login)])
+@router.post('/stock/advisor/analyze', dependencies=[Depends(api_require_login), Depends(require_feature('advisor'))])
 def analyze_stock(request: Request, body: dict = Body(default={})):
     """종목 AI 분석 (Claude 유료). 호출 1회당 고정 크레딧(ADVISOR_CREDIT_COST) 차감.
     차감 정책은 챗봇과 동일: 호출 전 잔액 확인 → Claude 성공 후에만 차감."""

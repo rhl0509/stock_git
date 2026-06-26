@@ -320,7 +320,9 @@ def _get_holdings_for(user_no: int) -> tuple[list, str]:
     """키움 실시간 보유종목 우선, 실패 시 DB(stock_holdings) 폴백. (holdings, source) 반환."""
     try:
         from kiwoom_client import kiwoom
-        if kiwoom.get_login_state() == 1:
+        from routes.utils import is_owner_user_no
+        # 키움 실보유는 주인 단일계좌. 소유자만 키움 보유를 쓰고, 그 외 회원은 DB 폴백.
+        if is_owner_user_no(user_no) and kiwoom.get_login_state() == 1:
             raw = kiwoom.get_account_holdings()
             if raw:
                 holdings = []

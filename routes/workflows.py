@@ -124,6 +124,10 @@ def _act_holdings_detail(ctx, params):
 def _act_realized_pnl(ctx, params):
     from datetime import datetime as _dt, timedelta as _td
     from kiwoom_client import kiwoom
+    from routes.utils import is_owner_user_no
+    # 키움 실현손익은 주인 단일계좌. 비소유자가 워크플로로 우회 조회하지 못하게 차단.
+    if not is_owner_user_no(ctx.get('member_id')):
+        raise RuntimeError('실현손익(키움 계좌) 액션은 계정 소유자만 사용할 수 있습니다.')
     _require_kiwoom()
     period = (params.get('period') or 'today').lower()
     now = _dt.now()

@@ -38,7 +38,7 @@ const NAV_SHORTCUTS = [
   { to:'/dart_alert',         icon:'bi-bell',            label:'공시 알림',    color:'#f472b6' },
 ];
 
-export default function StockDashboard() {
+export default function StockMain() {
   const { user } = useAuth();
   const [recommend, setRecommend] = useState([]);
   const [holdings,  setHoldings]  = useState([]);

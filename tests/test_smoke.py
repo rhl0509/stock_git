@@ -162,23 +162,6 @@ def test_backtest_code_validation(auth_client):
 
 
 # ─────────────────────────────────────────────────────────────────
-# 8. 추천 이력: 목록 라우트가 {date} 라우트에 섀도잉되지 않아야 함
-# ─────────────────────────────────────────────────────────────────
-def test_recommend_history_list_not_shadowed(auth_client):
-    r = auth_client.get("/recommend/history")
-    assert r.status_code == 200
-    d = r.json()
-    assert d.get("ok") is True and isinstance(d.get("dates"), list), \
-        "/recommend/history가 {date} 라우트로 섀도잉됨"
-    if d["dates"]:
-        rr = auth_client.get(f"/recommend/history/{d['dates'][0]}")
-        assert rr.status_code == 200
-        assert any(rr.json().get(c) for c in ("triple", "daily", "short", "swing"))
-    # 없는 날짜는 404
-    assert auth_client.get("/recommend/history/19990101").status_code == 404
-
-
-# ─────────────────────────────────────────────────────────────────
 # 9. price_alerts 사용자 격리
 # ─────────────────────────────────────────────────────────────────
 def test_price_alert_user_scoped(auth_client):
