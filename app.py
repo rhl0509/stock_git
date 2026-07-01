@@ -303,8 +303,8 @@ def _startup():
     try:
         from notify.send import migrate_tokens_to_db
         migrate_tokens_to_db()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"[NOTIFY] 토큰 마이그레이션 실패: {e}")
 
     # ── 스케줄러 ──
     # 주의: 웹 프로세스 내장 스케줄러. uvicorn 워커를 늘리면 작업이 중복 실행되므로

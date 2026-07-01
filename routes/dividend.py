@@ -547,9 +547,11 @@ def dividend_calendar(request: Request):
                 continue
             ym = proj_pay.strftime('%Y-%m')
             if ym in months:
-                months[ym]['expected'] += round(amt * h['quantity'])
+                months[ym]['expected'] += amt * h['quantity']
 
     rows = [months[ym] for ym in window]
+    for m in rows:
+        m['expected'] = round(m['expected'])
     return JSONResponse({
         'ok': True, 'months': rows,
         'total_received': sum(r['received'] for r in rows),

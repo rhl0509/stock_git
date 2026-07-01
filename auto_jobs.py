@@ -282,9 +282,11 @@ def job_self_check():
     try:
         from database.db_connection import get_db_connection
         conn = get_db_connection()
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1")
-        conn.close()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+        finally:
+            conn.close()
     except Exception as e:
         problems.append(f"DB 연결 실패: {type(e).__name__}")
 

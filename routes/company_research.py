@@ -120,8 +120,9 @@ def _extract_key_accounts(items):
 
 
 def _fetch_financials(corp_code):
+    _cur_year = time.localtime().tm_year
     for fs_div in ('CFS', 'OFS'):
-        for year in ('2024', '2023', '2022'):
+        for year in (str(y) for y in range(_cur_year, _cur_year - 4, -1)):
             r = requests.get(
                 'https://opendart.fss.or.kr/api/fnlttSinglAcnt.json',
                 params={
