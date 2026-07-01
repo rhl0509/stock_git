@@ -15,7 +15,7 @@
 | 스케줄러 | APScheduler (인프로세스, KST) |
 | 결제 | PortOne V2 (키 미설정 시 mock 모드) |
 | AI | Anthropic Claude (챗봇·종목 분석), XGBoost/LightGBM 앙상블(추천 모델) |
-| 시장 데이터 | 키움증권, DART, 한국투자증권(KIS), KRX, 한국은행(ECOS), FMP, Finnhub 등 |
+| 시장 데이터 | 한국투자증권(KIS, 국내 시세·일봉·외국인), DART, KRX(pykrx), 네이버 금융, 한국은행(ECOS), FMP, Finnhub, yfinance 등 |
 
 ---
 
@@ -23,7 +23,7 @@
 
 - **시장/종목** — 실시간 시세, 수출입 동향, 종목 상세·비교, 기업 실적 분석
 - **포트폴리오** — 보유 현황, 최적화, 리스크 분석, 월별 성과, 배당 캘린더, 관심 종목, 가상매매
-- **스크리닝** — 종목/테마 필터, 키움 조건검색, 섹터 히트맵, 52주 신고가·신저가
+- **스크리닝** — 종목 필터, 네이버 테마 히트맵, 섹터 히트맵, 52주 신고가·신저가
 - **AI·전략** — 매수/매도 분석, **AI 추천 종목**, 추천 기록, 백테스트, 퀀트 트레이딩, 학습 리포트, 자동화 워크플로
 - **리서치·알림** — 시장 보고서, 실적 캘린더, 뉴스, 공시·가격 알림
 - **크레딧/결제** — 크레딧 충전(PortOne), AI 챗봇·분석 호출당 차감, **AI 추천 데이 패스**(하루 1회 차감으로 추천 열람)
@@ -43,7 +43,7 @@
 ├── routes/             # API 라우터 (auth, credits, recommend, recommend_pass, ...)
 ├── database/           # DB 커넥션 풀
 ├── XGBoost_v2/         # 추천/예측 모델 (학습·일일 추천 생성)
-├── agent/ · notify/ · trading/ · kiwoom_collector/   # 에이전트·알림·매매·키움 연동
+├── agent/ · notify/ · trading/         # 에이전트·알림·매매(주문은 영구 비활성)
 ├── client/             # React SPA 소스 (Vite) → build 시 static/spa/ 로 출력
 ├── static/             # 정적 자원 (빌드 산출물 static/spa/ 포함, gitignore)
 ├── DEPLOY.md           # 배포 가이드

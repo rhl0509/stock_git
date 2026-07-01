@@ -17,8 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import requests
 
-from config import Config
-KIWOOM_URL = f"http://127.0.0.1:{Config.KIWOOM_COLLECTOR_PORT}"
+from kiwoom_client import kiwoom
 RECOMMEND_JSON = Path(__file__).parent.parent / "XGBoost_v2" / "model" / "daily_recommend.json"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -26,13 +25,13 @@ logger = logging.getLogger(__name__)
 
 
 def _get_price(code: str) -> int | None:
-    # 1차: 키움 32bit 서버
+    # 1차: KIS REST (시세 파사드)
     try:
-        r = requests.get(f"{KIWOOM_URL}/price/{code}", timeout=3)
-        d = r.json()
-        p = d.get("current_price") or d.get("price")
-        if p:
-            return int(p)
+        d = kiwoom.get_stock_price(code)
+        if d:
+            p = d.get("current_price") or d.get("price")
+            if p:
+                return int(p)
     except Exception:
         pass
     # 2차 폴백: 네이버 금융 모바일 API

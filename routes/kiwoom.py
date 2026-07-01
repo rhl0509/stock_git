@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request, Depends, Body
-from routes.utils import require_login_smart, require_owner
+from routes.utils import require_login_smart
 from fastapi.responses import JSONResponse
 from kiwoom_client import kiwoom, fetch_market_session
 import urllib.request
@@ -219,43 +219,6 @@ def _fetch_naver_theme_rates() -> dict:
         return cached["data"] or {}
 
 
-def _supplement_with_naver(stock_data: dict) -> dict:
-    code = stock_data.get('code', '')
-    if not code:
-        return stock_data
-    naver = _fetch_naver_stock(code)
-    fill_fields = [('per', 'per'), ('pbr', 'pbr'), ('eps', 'eps'),
-                   ('bps', 'bps'), ('foreign_ratio', 'foreign_ratio'), ('dividend', 'dividend')]
-    supplemented = False
-    for kiwoom_key, naver_key in fill_fields:
-        if not stock_data.get(kiwoom_key) and naver.get(naver_key):
-            stock_data[kiwoom_key] = naver[naver_key]
-            supplemented = True
-    stock_data['data_source'] = 'kiwoom+naver' if supplemented else 'kiwoom'
-    return stock_data
-
-
-@router.post('/kiwoom/login')
-async def kiwoom_login():
-    try:
-        if kiwoom.get_login_state() == 1:
-            return {"status": "already_logged_in"}
-        # 블로킹 로그인을 별도 스레드에서 실행 (이벤트 루프 차단 방지)
-        result = await asyncio.to_thread(kiwoom.login, 110)
-        if result.get('success'):
-            return {"status": "ok"}
-        return JSONResponse({"error": result.get('msg', '로그인 실패')}, status_code=400)
-    except Exception as e:
-        logger.error(f'[kiwoom] {e}', exc_info=True)
-        return JSONResponse({"error": '서버 오류가 발생했습니다.'}, status_code=500)
-
-
-@router.get('/kiwoom/status')
-def kiwoom_status():
-    state = kiwoom.get_login_state()
-    return {"connected": state == 1, "state": state}
-
-
 @router.get('/kiwoom/session')
 def get_session():
     return fetch_market_session()
@@ -264,7 +227,7 @@ def get_session():
 @router.get('/kiwoom/price/{code}')
 def get_kiwoom_price(code: str):
     try:
-        if kiwoom.get_login_state() != 1:
+        if not kiwoom.market_data_ready():
             data = _fetch_naver_full(code)
             if not data:
                 return JSONResponse({"error": "데이터를 가져오지 못했습니다."}, status_code=404)
@@ -278,30 +241,10 @@ def get_kiwoom_price(code: str):
         return JSONResponse({"error": '서버 오류가 발생했습니다.'}, status_code=500)
 
 
-@router.get('/kiwoom/nxt/price/{code}')
-def get_nxt_price(code: str):
-    try:
-        if kiwoom.get_login_state() != 1:
-            return JSONResponse({"error": "키움 로그인 필요"}, status_code=401)
-        mkt_session = fetch_market_session()
-        if not mkt_session["nxt"]:
-            return JSONResponse({"error": "NXT 운영 시간이 아닙니다.",
-                                 "session": mkt_session["session"],
-                                 "session_label": mkt_session["label"]}, status_code=400)
-        data = kiwoom.get_nxt_price(code)
-        if data is None:
-            return JSONResponse({"error": "NXT 데이터를 가져오지 못했습니다."}, status_code=404)
-        data.update({"session": mkt_session["session"], "session_label": mkt_session["label"]})
-        return data
-    except Exception as e:
-        logger.error(f'[kiwoom] {e}', exc_info=True)
-        return JSONResponse({"error": '서버 오류가 발생했습니다.'}, status_code=500)
-
-
 @router.get('/kiwoom/best/price/{code}')
 async def get_best_price(code: str):
     try:
-        if kiwoom.get_login_state() == 1:
+        if kiwoom.market_data_ready():
             data = kiwoom.get_best_price(code)
             if data:
                 return data
@@ -317,8 +260,8 @@ async def get_best_price(code: str):
 @router.get('/kiwoom/info/{code}')
 def get_kiwoom_info(code: str):
     try:
-        if kiwoom.get_login_state() != 1:
-            return JSONResponse({"error": "키움 로그인 필요"}, status_code=401)
+        if not kiwoom.market_data_ready():
+            return JSONResponse({"error": "시세 소스(KIS) 미설정"}, status_code=503)
         data = kiwoom.get_stock_info(code)
         if data is None:
             return JSONResponse({"error": "데이터를 가져오지 못했습니다."}, status_code=404)
@@ -331,8 +274,8 @@ def get_kiwoom_info(code: str):
 @router.post('/kiwoom/prices')
 def get_kiwoom_prices(request: Request, body: dict = Body(default={})):
     try:
-        if kiwoom.get_login_state() != 1:
-            return JSONResponse({"error": "키움 로그인 필요"}, status_code=401)
+        if not kiwoom.market_data_ready():
+            return JSONResponse({"error": "시세 소스(KIS) 미설정"}, status_code=503)
         codes  = body.get('codes', [])
         results = []
         for code in codes[:20]:
@@ -348,90 +291,17 @@ def get_kiwoom_prices(request: Request, body: dict = Body(default={})):
 @router.get('/kiwoom/ohlcv/{code}')
 def get_ohlcv(code: str, request: Request):
     try:
-        if kiwoom.get_login_state() != 1:
-            return JSONResponse({"error": "키움 로그인 필요"}, status_code=401)
+        if not kiwoom.market_data_ready():
+            return JSONResponse({"error": "시세 소스(KIS) 미설정"}, status_code=503)
         count = min(int(request.query_params.get('count', 80)), 600)
         df    = kiwoom.get_ohlcv(code, count=count)
-        if df.empty:
+        if df is None or df.empty:
             return JSONResponse({"error": "OHLCV 데이터를 가져오지 못했습니다."}, status_code=404)
         data = [{"date": idx.strftime("%Y-%m-%d"), "open": int(row["open"]),
                  "high": int(row["high"]), "low": int(row["low"]),
                  "close": int(row["close"]), "volume": int(row["volume"])}
                 for idx, row in df.iterrows()]
         return {"code": code, "count": len(data), "data": data}
-    except Exception as e:
-        logger.error(f'[kiwoom] {e}', exc_info=True)
-        return JSONResponse({"error": '서버 오류가 발생했습니다.'}, status_code=500)
-
-
-@router.get('/kiwoom/investor-trend/{code}')
-def get_investor_trend(code: str, request: Request):
-    try:
-        if kiwoom.get_login_state() != 1:
-            return JSONResponse({"error": "키움 로그인 필요"}, status_code=401)
-        investor_type = request.query_params.get('investor', '외국인')
-        if investor_type not in ("외국인", "기관", "개인"):
-            return JSONResponse({"error": "investor 는 외국인|기관|개인 중 하나여야 합니다."}, status_code=400)
-        count  = min(int(request.query_params.get('count', 20)), 20)
-        values = kiwoom.get_investor_trend(code, investor_type=investor_type, count=count)
-        if not values or all(v == 0 for v in values):
-            return JSONResponse({"error": "투자자 동향 데이터를 가져오지 못했습니다."}, status_code=404)
-        import numpy as np
-        arr     = np.array(values, dtype=float)
-        z_score = float((arr[-1] - arr.mean()) / (arr.std() + 1e-9))
-        return {"code": code, "investor_type": investor_type, "count": len(values),
-                "values": values, "z_score": round(z_score, 4)}
-    except Exception as e:
-        logger.error(f'[kiwoom] {e}', exc_info=True)
-        return JSONResponse({"error": '서버 오류가 발생했습니다.'}, status_code=500)
-
-
-@router.get('/kiwoom/conditions', dependencies=[Depends(require_owner)])
-def get_conditions():
-    try:
-        if kiwoom.get_login_state() != 1:
-            return JSONResponse({"error": "키움 로그인 필요"}, status_code=401)
-        condition_list = kiwoom.load_condition_list()
-        return {"count": len(condition_list),
-                "conditions": [{"name": name, "index": idx} for name, idx in condition_list.items()]}
-    except Exception as e:
-        logger.error(f'[kiwoom] {e}', exc_info=True)
-        return JSONResponse({"error": '서버 오류가 발생했습니다.'}, status_code=500)
-
-
-@router.post('/kiwoom/condition/run', dependencies=[Depends(require_owner)])
-def run_condition(request: Request, body: dict = Body(default={})):
-    try:
-        if kiwoom.get_login_state() != 1:
-            return JSONResponse({"error": "키움 로그인 필요"}, status_code=401)
-        condition_name = body.get('condition_name', '').strip()
-        if not condition_name:
-            return JSONResponse({"error": "condition_name 이 필요합니다."}, status_code=400)
-        codes = kiwoom.run_condition(condition_name)
-        if codes is None:
-            return JSONResponse({"error": f"조건식 '{condition_name}'을 찾을 수 없습니다."}, status_code=404)
-        code_count = len(codes)
-        results = []
-        for code in codes[:30]:
-            data = kiwoom.get_best_price(code)
-            if data:
-                results.append(data)
-            _time.sleep(0.05)
-        return {"condition": condition_name, "code_count": code_count, "count": len(results), "results": results}
-    except Exception as e:
-        logger.error(f'[kiwoom] {e}', exc_info=True)
-        return JSONResponse({"error": '서버 오류가 발생했습니다.'}, status_code=500)
-
-
-@router.get('/kiwoom/deposit', dependencies=[Depends(require_owner)])
-def get_deposit():
-    try:
-        if kiwoom.get_login_state() != 1:
-            return JSONResponse({"error": "키움 로그인 필요"}, status_code=401)
-        deposit = kiwoom.get_deposit()
-        if deposit is None:
-            return JSONResponse({"error": "예수금 조회 실패 (32비트 서버 미지원)"}, status_code=404)
-        return {"deposit": deposit}
     except Exception as e:
         logger.error(f'[kiwoom] {e}', exc_info=True)
         return JSONResponse({"error": '서버 오류가 발생했습니다.'}, status_code=500)
@@ -460,21 +330,6 @@ def naver_stock_info_batch(request: Request, body: dict = Body(default={})):
         return JSONResponse({"error": '서버 오류가 발생했습니다.'}, status_code=500)
 
 
-@router.get('/kiwoom/themes')
-def get_themes(request: Request):
-    try:
-        if kiwoom.get_login_state() != 1:
-            return JSONResponse({"error": "키움 로그인 필요"}, status_code=401)
-        sort   = int(request.query_params.get('sort', 0))
-        themes = kiwoom.get_theme_list(sort)
-        if sort == 1:
-            themes.sort(key=lambda t: t.get('rate', 0), reverse=True)
-        return {"count": len(themes), "themes": themes}
-    except Exception as e:
-        logger.error(f'[kiwoom] {e}', exc_info=True)
-        return JSONResponse({"error": '서버 오류가 발생했습니다.'}, status_code=500)
-
-
 @router.get('/naver/themes')
 async def get_naver_themes():
     """네이버 증권 테마 목록 (전체 등락률 포함). 히트맵/랭킹 전용."""
@@ -486,133 +341,6 @@ async def get_naver_themes():
         ]
         themes.sort(key=lambda t: t["rate"], reverse=True)
         return {"count": len(themes), "themes": themes, "source": "naver"}
-    except Exception as e:
-        logger.error(f'[kiwoom] {e}', exc_info=True)
-        return JSONResponse({"error": '서버 오류가 발생했습니다.'}, status_code=500)
-
-
-@router.post('/kiwoom/theme/stocks')
-def get_theme_stocks(request: Request, body: dict = Body(default={})):
-    try:
-        if kiwoom.get_login_state() != 1:
-            return JSONResponse({"error": "키움 로그인 필요"}, status_code=401)
-        theme_code = body.get('theme_code', '').strip()
-        theme_name = body.get('theme_name', theme_code)
-        limit      = min(int(body.get('limit', 20)), 50)
-        if not theme_code:
-            return JSONResponse({"error": "theme_code 가 필요합니다."}, status_code=400)
-        codes      = kiwoom.get_theme_stocks(theme_code)
-        code_count = len(codes)
-        if not codes:
-            return {"theme_code": theme_code, "theme_name": theme_name,
-                    "code_count": 0, "count": 0, "results": []}
-        supplement = body.get('supplement', True)
-        results = []
-        for code in codes[:limit]:
-            data = kiwoom.get_best_price(code)
-            if data:
-                if supplement:
-                    data = _supplement_with_naver(data)
-                results.append(data)
-            _time.sleep(0.05)
-        return {"theme_code": theme_code, "theme_name": theme_name, "code_count": code_count,
-                "count": len(results), "results": results, "supplemented": supplement}
-    except Exception as e:
-        logger.error(f'[kiwoom] {e}', exc_info=True)
-        return JSONResponse({"error": '서버 오류가 발생했습니다.'}, status_code=500)
-
-
-@router.post('/kiwoom/related-stocks')
-def get_related_stocks(request: Request, body: dict = Body(default={})):
-    try:
-        if kiwoom.get_login_state() != 1:
-            return JSONResponse({"error": "키움 로그인 필요"}, status_code=401)
-        target_code = body.get('code', '').strip().lstrip('A')
-        force       = request.query_params.get('rebuild') == '1'
-        if not target_code:
-            return JSONResponse({"error": "code 가 필요합니다."}, status_code=400)
-        result = kiwoom.get_related_stocks(target_code, force=force)
-        if "error" in result:
-            return JSONResponse(result, status_code=500)
-        return result
-    except Exception as e:
-        logger.error(f'[kiwoom] {e}', exc_info=True)
-        return JSONResponse({"error": '서버 오류가 발생했습니다.'}, status_code=500)
-
-
-_index_building = False
-
-
-@router.post('/kiwoom/theme-index/build')
-def build_theme_index_route():
-    global _index_building
-    try:
-        if kiwoom.get_login_state() != 1:
-            return JSONResponse({"error": "키움 로그인 필요"}, status_code=401)
-        if kiwoom._theme_index_cache is not None:
-            count = kiwoom._theme_index_cache.get("count", 0)
-            return {"status": "ready", "count": count}
-        if _index_building:
-            return {"status": "building"}
-        import threading
-        _index_building = True
-        def _build():
-            global _index_building
-            try:
-                kiwoom.build_theme_index(force=True)
-            finally:
-                _index_building = False
-        threading.Thread(target=_build, daemon=True).start()
-        return {"status": "started"}
-    except Exception as e:
-        logger.error(f'[kiwoom] {e}', exc_info=True)
-        return JSONResponse({"error": '서버 오류가 발생했습니다.'}, status_code=500)
-
-
-@router.get('/kiwoom/theme-index/status')
-def theme_index_status():
-    if kiwoom._theme_index_cache is not None:
-        return {"status": "ready", "count": kiwoom._theme_index_cache.get("count", 0)}
-    if _index_building:
-        return {"status": "building"}
-    return {"status": "idle"}
-
-
-@router.get('/kiwoom/period-trades', dependencies=[Depends(require_owner)])
-def kiwoom_period_trades(request: Request):
-    date_from = request.query_params.get('from', '')
-    date_to   = request.query_params.get('to', '')
-    if not date_from or not date_to:
-        return JSONResponse({"error": "from/to 파라미터 필요 (YYYYMMDD)"}, status_code=400)
-    try:
-        if kiwoom.get_login_state() != 1:
-            return JSONResponse({"error": "키움 로그인 필요"}, status_code=401)
-        trades = kiwoom.get_period_trades(date_from, date_to)
-        if trades is None:
-            return JSONResponse({"error": "기간 체결내역 조회 실패"}, status_code=500)
-        return {"trades": trades, "count": len(trades)}
-    except Exception as e:
-        logger.error(f'[kiwoom] {e}', exc_info=True)
-        return JSONResponse({"error": '서버 오류가 발생했습니다.'}, status_code=500)
-
-
-@router.post('/kiwoom/related-stocks/prices')
-def get_related_stocks_prices(request: Request, body: dict = Body(default={})):
-    try:
-        if kiwoom.get_login_state() != 1:
-            return JSONResponse({"error": "키움 로그인 필요"}, status_code=401)
-        codes      = body.get('codes', [])
-        offset     = int(body.get('offset', 0))
-        limit      = min(int(body.get('limit', 20)), 30)
-        page_codes = codes[offset:offset + limit]
-        results    = []
-        for code in page_codes:
-            data = kiwoom.get_best_price(code)
-            if data:
-                results.append(data)
-            _time.sleep(0.05)
-        return {"results": results, "offset": offset, "limit": limit,
-                "total": len(codes), "has_more": offset + limit < len(codes)}
     except Exception as e:
         logger.error(f'[kiwoom] {e}', exc_info=True)
         return JSONResponse({"error": '서버 오류가 발생했습니다.'}, status_code=500)

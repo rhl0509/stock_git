@@ -61,29 +61,7 @@ def _notify(msg: str) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────
-# 1. 키움 포트폴리오 동기화 (평일 장마감 후)
-# ─────────────────────────────────────────────────────────────────
-def job_kiwoom_sync():
-    user_no = get_owner_user_no()
-    if not user_no:
-        logger.warning("[auto/kiwoom_sync] 대상 사용자 없음 — 스킵")
-        return
-    try:
-        from routes.stock_holdings import do_kiwoom_sync
-        result = do_kiwoom_sync(user_no)
-        if result.get('ok'):
-            logger.info(f"[auto/kiwoom_sync] 완료 — 보유 {result['count']}종목, "
-                        f"체결 {result['trade_synced']}건 (user {user_no})")
-        else:
-            # 키움 미접속 등은 흔한 상황 — 로그만 남기고 알림은 생략
-            logger.warning(f"[auto/kiwoom_sync] 스킵: {result.get('error')}")
-    except Exception as e:
-        logger.error(f"[auto/kiwoom_sync] 실패: {e}", exc_info=True)
-        _notify(f"⚠️ 키움 자동 동기화 실패\n{datetime.now():%m/%d %H:%M}")
-
-
-# ─────────────────────────────────────────────────────────────────
-# 2. 배당 자동 기록 (주 1회)
+# 1. 배당 자동 기록 (주 1회)
 # ─────────────────────────────────────────────────────────────────
 def job_dividend_autoimport():
     user_no = get_owner_user_no()
@@ -142,22 +120,7 @@ def job_dividend_autoimport():
 
 
 # ─────────────────────────────────────────────────────────────────
-# 3. 테마 인덱스 빌드 (주 1회)
-# ─────────────────────────────────────────────────────────────────
-def job_theme_index():
-    try:
-        from kiwoom_client import kiwoom
-        if kiwoom.get_login_state() != 1:
-            logger.info("[auto/theme_index] 키움 미접속 — 스킵")
-            return
-        kiwoom.build_theme_index(force=True)
-        logger.info("[auto/theme_index] 빌드 완료")
-    except Exception as e:
-        logger.error(f"[auto/theme_index] 실패: {e}")
-
-
-# ─────────────────────────────────────────────────────────────────
-# 4. 모델 백업 (재학습 직전, backup_model.bat 대체)
+# 2. 모델 백업 (재학습 직전, backup_model.bat 대체)
 # ─────────────────────────────────────────────────────────────────
 def job_model_backup():
     try:
@@ -290,14 +253,14 @@ def job_self_check():
     except Exception as e:
         problems.append(f"DB 연결 실패: {type(e).__name__}")
 
-    # 2) 키움 콜렉터 (평일만 의미)
+    # 2) 시세 소스 (KIS) — 평일만 의미
     if now.weekday() < 5:
         try:
             from kiwoom_client import kiwoom
-            if kiwoom.get_login_state() != 1:
-                problems.append("키움 콜렉터 미접속 (시세/계좌 동기화 중단)")
+            if not kiwoom.market_data_ready():
+                problems.append("KIS 시세 미설정 (KIS_APP_KEY/SECRET 확인)")
         except Exception:
-            problems.append("키움 콜렉터 응답 없음")
+            problems.append("시세 소스(KIS) 확인 실패")
 
     # 3) DB 백업 최신성 (36시간)
     db_dir = ROOT / 'backup' / 'db'
@@ -361,53 +324,15 @@ def job_workflow_dispatch():
 
 
 # ─────────────────────────────────────────────────────────────────
-# 키움 자동 로그인 (장 시작 전, 08:00 워크플로 동기화 전 접속 보장)
-# ─────────────────────────────────────────────────────────────────
-def job_kiwoom_login():
-    """평일 07:50 키움 자동 로그인.
-
-    08:00 워크플로의 키움 동기화 단계가 성공하려면 그 전에 접속돼 있어야 한다.
-    키움 OpenAPI는 매일 강제 로그아웃되므로 매 영업일 아침 재접속이 필요.
-    팝업 없이 자동 접속되려면 키움 로그인창에서 ID/비밀번호/공인인증서 저장 +
-    '자동 로그인 설정'이 켜져 있어야 한다(미설정 시 팝업이 떠 수동 입력 필요).
-    """
-    try:
-        from kiwoom_client import kiwoom
-        if kiwoom.get_login_state() == 1:
-            logger.info("[auto/kiwoom_login] 이미 접속됨 — 스킵")
-            return
-        result = kiwoom.login(timeout=90)
-        if result.get('success'):
-            logger.info("[auto/kiwoom_login] 키움 로그인 완료")
-        else:
-            logger.error(f"[auto/kiwoom_login] 로그인 실패 — {result.get('msg')}")
-            _notify(f"⚠️ 키움 자동 로그인 실패 ({datetime.now():%m/%d %H:%M})\n"
-                    f"{result.get('msg')}\n"
-                    f"장 시작 전 콜렉터 창의 로그인 팝업을 확인하세요.")
-    except Exception as e:
-        logger.error(f"[auto/kiwoom_login] 오류: {e}", exc_info=True)
-        _notify(f"⚠️ 키움 자동 로그인 오류 ({datetime.now():%m/%d %H:%M})\n{type(e).__name__}: {e}")
-
-
-# ─────────────────────────────────────────────────────────────────
 # 등록
 # ─────────────────────────────────────────────────────────────────
 def register(scheduler) -> None:
     """app.py 의 BackgroundScheduler에 자동화 잡 등록."""
     from apscheduler.triggers.cron import CronTrigger
     TZ = 'Asia/Seoul'
-    scheduler.add_job(job_kiwoom_login,
-                      CronTrigger(day_of_week='mon-fri', hour=7, minute=50, timezone=TZ),
-                      id='auto_kiwoom_login', replace_existing=True)
-    scheduler.add_job(job_kiwoom_sync,
-                      CronTrigger(day_of_week='mon-fri', hour=15, minute=50, timezone=TZ),
-                      id='auto_kiwoom_sync', replace_existing=True)
     scheduler.add_job(job_dividend_autoimport,
                       CronTrigger(day_of_week='sat', hour=9, minute=0, timezone=TZ),
                       id='auto_dividend', replace_existing=True)
-    scheduler.add_job(job_theme_index,
-                      CronTrigger(day_of_week='sun', hour=17, minute=0, timezone=TZ),
-                      id='auto_theme_index', replace_existing=True)
     scheduler.add_job(job_model_backup,
                       CronTrigger(day_of_week='sun', hour=1, minute=30, timezone=TZ),
                       id='auto_model_backup', replace_existing=True)
@@ -426,5 +351,5 @@ def register(scheduler) -> None:
     scheduler.add_job(job_workflow_dispatch,
                       CronTrigger(minute='*', timezone=TZ),
                       id='auto_workflow_dispatch', replace_existing=True)
-    logger.info("[auto_jobs] 자동화 잡 10종 등록 완료 "
-                "(키움로그인/키움동기화/배당기록/테마인덱스/모델백업/DB백업/오프사이트/자가진단/퀀트스캔/워크플로디스패처)")
+    logger.info("[auto_jobs] 자동화 잡 7종 등록 완료 "
+                "(배당기록/모델백업/DB백업/오프사이트/자가진단/퀀트스캔/워크플로디스패처)")

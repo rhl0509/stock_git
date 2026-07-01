@@ -9,9 +9,6 @@ export default function Sidebar({ open, onClose }) {
   const { theme, toggle } = useTheme();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = React.useState(false);
-  const [kiwoomConnected, setKiwoomConnected] = React.useState(false);
-  const [kiwoomLoading, setKiwoomLoading]     = React.useState(false);
-  const [kiwoomError, setKiwoomError]         = React.useState('');
   const [recPassActive, setRecPassActive]     = React.useState(false);
   const [recGate, setRecGate]                 = React.useState(false);
   const menuRef = useRef(null);
@@ -31,11 +28,6 @@ export default function Sidebar({ open, onClose }) {
   }, [menuOpen]);
 
   useEffect(() => {
-    if (!user) return;
-    api.get('/api/kiwoom/status').then(r => setKiwoomConnected(r.data.connected)).catch(() => {});
-  }, [user]);
-
-  useEffect(() => {
     if (!user) { setRecPassActive(false); return; }
     const load = () => api.get('/api/recommend-pass/status')
       .then(r => setRecPassActive(!!r.data.active)).catch(() => {});
@@ -43,21 +35,6 @@ export default function Sidebar({ open, onClose }) {
     document.addEventListener('recommendPassChanged', load);
     return () => document.removeEventListener('recommendPassChanged', load);
   }, [user]);
-
-  const handleKiwoomLogin = async () => {
-    setKiwoomLoading(true);
-    setKiwoomError('');
-    try {
-      await api.post('/api/kiwoom/login', {}, { timeout: 120_000 });
-      const r = await api.get('/api/kiwoom/status');
-      setKiwoomConnected(r.data.connected);
-      if (!r.data.connected) setKiwoomError('연결됐으나 상태 확인 실패');
-    } catch (err) {
-      const msg = err.response?.data?.error || err.message || '로그인 실패';
-      setKiwoomError(msg);
-    }
-    setKiwoomLoading(false);
-  };
 
   const handleLogout = async () => {
     await logout();
@@ -122,7 +99,6 @@ export default function Sidebar({ open, onClose }) {
               {link('/stock_theme_filter',  'bi-tags',         '테마 필터')}
               {link('/sector_heatmap',      'bi-grid-3x3',     '섹터 히트맵')}
               {link('/screener_52week',     'bi-bullseye',     '52주 신고가/신저가')}
-              {link('/stock_kiwoom_filter', 'bi-sliders',      '키움 조건검색')}
             </ul>
             <span className="nav-section-label" style={{ marginTop: 14 }}>AI · 전략</span>
             <ul className="list-unstyled mb-0">
@@ -177,15 +153,6 @@ export default function Sidebar({ open, onClose }) {
                     <i className="bi bi-person-gear"></i>
                     <span>내 정보 수정</span>
                   </Link>
-                  <button className="session-menu-item" disabled={kiwoomLoading}
-                    style={{ display:'flex', flexDirection:'column', alignItems:'flex-start', gap:9, padding:'9px 13px', fontSize:'0.82rem', fontWeight:500, color: kiwoomConnected ? 'var(--up)' : kiwoomError ? 'var(--down)' : 'var(--fg-2)', cursor:'pointer', border:'none', background:'transparent', width:'100%', textAlign:'left', opacity: kiwoomLoading ? 0.6 : 1 }}
-                    onClick={handleKiwoomLogin}>
-                    <div style={{ display:'flex', alignItems:'center', gap:9 }}>
-                      <i className={`bi ${kiwoomConnected ? 'bi-plug-fill' : kiwoomError ? 'bi-plug' : 'bi-plug'}`}></i>
-                      <span>{kiwoomLoading ? '연결 중 (팝업 확인)...' : kiwoomConnected ? '키움 API 연결됨' : '키움 API 로그인'}</span>
-                    </div>
-                    {kiwoomError && <div style={{ fontSize:'0.7rem', color:'var(--down)', marginLeft:22, marginTop:2, wordBreak:'break-all', whiteSpace:'pre-wrap' }}>{kiwoomError}</div>}
-                  </button>
                   <button className="session-menu-item" style={{ display:'flex', alignItems:'center', gap:9, padding:'9px 13px', fontSize:'0.82rem', fontWeight:500, color:'var(--fg-2)', cursor:'pointer', border:'none', background:'transparent', width:'100%', textAlign:'left' }} onClick={toggle}>
                     <i className={`bi ${theme === 'dark' ? 'bi-sun' : 'bi-moon'}`}></i>
                     <span>{theme === 'dark' ? '라이트 모드' : '다크 모드'}</span>

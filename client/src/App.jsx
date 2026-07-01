@@ -19,7 +19,6 @@ const PortfolioPerf   = lazy(() => import('./pages/PortfolioPerf.jsx'));
 const RiskDashboard   = lazy(() => import('./pages/RiskDashboard.jsx'));
 const PaperTrading    = lazy(() => import('./pages/PaperTrading.jsx'));
 const StockFilter     = lazy(() => import('./pages/StockFilter.jsx'));
-const StockKiwoomFilter= lazy(() => import('./pages/StockKiwoomFilter.jsx'));
 const StockThemeFilter= lazy(() => import('./pages/StockThemeFilter.jsx'));
 const Recommend       = lazy(() => import('./pages/Recommend.jsx'));
 const RecommendAbs    = lazy(() => import('./pages/RecommendAbs.jsx'));
@@ -94,7 +93,6 @@ export default function App() {
               <Route path="/risk"               element={<ProtectedRoute><RiskDashboard /></ProtectedRoute>} />
               <Route path="/paper_trading"      element={<ProtectedRoute><PaperTrading /></ProtectedRoute>} />
               <Route path="/stock_filter"       element={<ProtectedRoute><StockFilter /></ProtectedRoute>} />
-              <Route path="/stock_kiwoom_filter" element={<ProtectedRoute><StockKiwoomFilter /></ProtectedRoute>} />
               <Route path="/stock_theme_filter" element={<ProtectedRoute><StockThemeFilter /></ProtectedRoute>} />
               <Route path="/recommend"          element={<ProtectedRoute><Recommend /></ProtectedRoute>} />
               <Route path="/recommend_abs"      element={<ProtectedRoute><Recommend /></ProtectedRoute>} />

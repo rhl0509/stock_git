@@ -23,8 +23,6 @@ class Config:
 
     MYSQL_CURSORCLASS = 'DictCursor'
 
-    KIWOOM_COLLECTOR_PORT = int(os.getenv('KIWOOM_COLLECTOR_PORT', '5100'))
-
     # 포트원(PortOne) 결제 — 테스트 모드. 키가 없으면 라우트가 mock 모드로 동작한다.
     #   PORTONE_STORE_ID    : 상점 식별자 (프론트 SDK / 결제창에 사용)
     #   PORTONE_CHANNEL_KEY : 결제 채널 키 (프론트 결제창 requestPayment 에 사용)

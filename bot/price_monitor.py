@@ -22,9 +22,8 @@ from dotenv import load_dotenv
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import requests
+from kiwoom_client import kiwoom
 
-KIWOOM_URL      = f"http://127.0.0.1:{os.getenv('KIWOOM_COLLECTOR_PORT', '5100')}"
 RECOMMEND_JSON  = Path(__file__).parent.parent / "XGBoost_v2" / "model" / "daily_recommend.json"
 ALERT_CONFIG    = Path(__file__).parent / "alert_config.json"
 OHLCV_DIR       = Path(__file__).parent.parent / "XGBoost_v2" / "data" / "ohlcv"
@@ -63,19 +62,18 @@ def _is_market_open() -> bool:
 # ─────────────────────────────────────────────────────────
 
 def _get_holdings() -> list:
+    # 보유(계좌)는 운영자 단일계좌 OCX 전용 — 배포(KIS)에서는 미지원.
     try:
-        r = requests.get(f"{KIWOOM_URL}/account/holdings", timeout=5)
-        return r.json().get("holdings", [])
+        return kiwoom.get_account_holdings() or []
     except Exception as e:
         logger.debug(f"보유 조회 실패: {e}")
         return []
 
 
 def _get_price_data(code: str) -> dict:
-    """현재가 + 등락률 + 거래량 반환."""
+    """현재가 + 등락률 + 거래량 반환 (KIS REST)."""
     try:
-        r = requests.get(f"{KIWOOM_URL}/price/{code}", timeout=5)
-        return r.json()
+        return kiwoom.get_stock_price(code) or {}
     except Exception:
         return {}
 
@@ -469,21 +467,15 @@ def _check_closing_pnl():
 
 
 # ─────────────────────────────────────────────────────────
-# Kiwoom 로그인 대기
+# 시세 소스 준비 확인 (KIS)
 # ─────────────────────────────────────────────────────────
 
-def _wait_for_kiwoom_login(poll_interval: int = 10):
-    logger.info("Kiwoom 로그인 대기 중...")
-    while True:
-        try:
-            r = requests.get(f"{KIWOOM_URL}/status", timeout=3)
-            if r.json().get("connected"):
-                logger.info("Kiwoom 로그인 확인 — 모니터링 시작")
-                return
-        except Exception:
-            pass
-        logger.info(f"  미연결, {poll_interval}초 후 재확인...")
-        time.sleep(poll_interval)
+def _wait_for_market_data():
+    # 키움 콜렉터 제거됨. KIS 시세 준비 여부만 확인하고 바로 시작한다(무한대기 금지).
+    if kiwoom.market_data_ready():
+        logger.info("KIS 시세 준비 완료 — 모니터링 시작")
+    else:
+        logger.warning("KIS 시세 미설정(KIS_APP_KEY/SECRET) — 시세 없이 시작(알림 제한)")
 
 
 # ─────────────────────────────────────────────────────────
@@ -498,7 +490,7 @@ def run():
     logger.info(f"  급등/급락    : 등락률 ±{SUDDEN_MOVE_PCT}% 이상")
     logger.info("=" * 45)
 
-    _wait_for_kiwoom_login()
+    _wait_for_market_data()
 
     while True:
         now = datetime.now()

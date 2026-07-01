@@ -39,7 +39,7 @@ def test_no_unprotected_routes(client):
 # 2. 비인증 차단: 민감 엔드포인트 샘플
 # ─────────────────────────────────────────────────────────────────
 @pytest.mark.parametrize("path", [
-    "/api/kiwoom/deposit",
+    "/api/kiwoom/info/005930",
     "/api/paper_trading/summary",
     "/api/price_alerts",
     "/recommend/json",

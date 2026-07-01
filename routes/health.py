@@ -2,15 +2,13 @@
 routes/health.py — 서버 건강 체크 엔드포인트.
 
 GET /health
-  DB, Kiwoom 콜렉터, ML 모델 상태를 JSON으로 반환.
+  DB, 시세 소스(KIS), ML 모델 상태를 JSON으로 반환.
   모니터링 도구에서 인증 없이 호출 가능.
 """
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
 
-import requests as _requests
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
@@ -18,7 +16,6 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 MODEL_DIR = Path(__file__).parent.parent / "XGBoost_v2" / "model"
-KIWOOM_PORT = os.getenv("KIWOOM_COLLECTOR_PORT", "5100")
 
 
 @router.get("/health")
@@ -38,19 +35,13 @@ def health_check():
         components["db"] = {"ok": False, "error": type(e).__name__}
         all_ok = False
 
-    # ── Kiwoom 32비트 콜렉터 ────────────────────────────────
+    # ── 시세 소스 (KIS REST) ────────────────────────────────
     try:
-        r = _requests.get(
-            f"http://127.0.0.1:{KIWOOM_PORT}/status", timeout=3
-        )
-        data = r.json() if r.status_code == 200 else {}
-        components["kiwoom"] = {
-            "ok": r.status_code == 200,
-            "logged_in": data.get("connected", False),
-            "login_state": data.get("state"),
-        }
+        from kiwoom_client import kiwoom
+        ready = kiwoom.market_data_ready()
+        components["market_data"] = {"ok": ready, "source": "KIS" if ready else "NONE"}
     except Exception as e:
-        components["kiwoom"] = {"ok": False, "error": type(e).__name__}
+        components["market_data"] = {"ok": False, "error": type(e).__name__}
 
     # ── ML 모델 파일 ────────────────────────────────────────
     try:
