@@ -363,24 +363,21 @@ def buy_stock(request: Request, data: dict = Body(default={})):
                 return JSONResponse({"error": "가계부가 없습니다."}, status_code=400)
             account_book_id = account_book['id']
 
+            # (member_id, code) 유니크 인덱스 기반 원자적 upsert.
+            # 동시 첫매수 중복 INSERT · 동시 매수 lost update를 DB 레벨에서 한 번에 방어
+            # (행잠금 SELECT 불필요). ON DUPLICATE KEY UPDATE는 좌→우로 평가되므로,
+            # 옛 quantity를 쓰는 avg_price를 quantity 재대입보다 반드시 먼저 둔다.
             cursor.execute(
-                "SELECT * FROM stock_holdings WHERE member_id = %s AND code = %s",
-                (user_no, code)
+                """INSERT INTO stock_holdings (member_id, code, name, quantity, avg_price)
+                   VALUES (%s, %s, %s, %s, %s) AS new
+                   ON DUPLICATE KEY UPDATE
+                       avg_price = ((stock_holdings.avg_price * stock_holdings.quantity)
+                                    + (new.avg_price * new.quantity))
+                                   DIV (stock_holdings.quantity + new.quantity),
+                       quantity  = stock_holdings.quantity + new.quantity,
+                       name      = new.name""",
+                (user_no, code, name, quantity, price)
             )
-            existing = cursor.fetchone()
-
-            if existing:
-                new_qty = existing['quantity'] + quantity
-                new_avg = ((existing['avg_price'] * existing['quantity']) + (price * quantity)) // new_qty
-                cursor.execute(
-                    "UPDATE stock_holdings SET quantity = %s, avg_price = %s, name = %s WHERE id = %s",
-                    (new_qty, new_avg, name, existing['id'])
-                )
-            else:
-                cursor.execute(
-                    "INSERT INTO stock_holdings (member_id, code, name, quantity, avg_price) VALUES (%s, %s, %s, %s, %s)",
-                    (user_no, code, name, quantity, price)
-                )
 
             cursor.execute(
                 "INSERT INTO stock_transactions (member_id, code, name, type, quantity, price, total) VALUES (%s, %s, %s, 'buy', %s, %s, %s)",
@@ -424,7 +421,7 @@ def sell_stock(request: Request, data: dict = Body(default={})):
     try:
         with conn.cursor() as cursor:
             cursor.execute(
-                "SELECT * FROM stock_holdings WHERE member_id = %s AND code = %s",
+                "SELECT * FROM stock_holdings WHERE member_id = %s AND code = %s FOR UPDATE",
                 (user_no, code)
             )
             existing = cursor.fetchone()
