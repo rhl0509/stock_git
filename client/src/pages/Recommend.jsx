@@ -66,6 +66,21 @@ function SourceBadge({ source, absMode }) {
   );
 }
 
+// 횡단면 상대순위 배지 — 순수 모델 점수의 유동성 유니버스 내 퍼센타일(model_rank_pct, 1=최상위).
+// 홀드아웃 검증상 edge 는 절대 신뢰도가 아니라 이 상대순위에 있다(상위%로 표시).
+function RankBadge({ pct }) {
+  if (pct == null) return <span style={{ color: 'var(--fg-3)', fontSize: '0.75rem' }}>-</span>;
+  const top   = Math.max(1, Math.round((1 - pct) * 100));  // 상위 X%
+  const color = top <= 10 ? '#22c55e' : top <= 30 ? '#f59e0b' : '#94a3b8';
+  return (
+    <span title="유동성 유니버스 내 순수 모델 점수의 횡단면 순위 (검증상 edge 지표)"
+      style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: 3, fontFamily: 'var(--font-mono)',
+        fontWeight: 700, whiteSpace: 'nowrap', background: `${color}22`, color, border: `1px solid ${color}44` }}>
+      상위 {top}%
+    </span>
+  );
+}
+
 function StockTable({ items, isAbs, loading }) {
   const fmtP = v => v ? v.toLocaleString('ko') : '-';
   const fmtR = v => v != null ? `${v > 0 ? '+' : ''}${(v * 100).toFixed(2)}%` : '-';
@@ -81,7 +96,7 @@ function StockTable({ items, isAbs, loading }) {
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.81rem', minWidth: 840 }}>
         <thead>
           <tr style={{ background: 'var(--bg-3)', borderBottom: '2px solid var(--line-1)' }}>
-            {['#', '종목', '코드', '출처', isAbs ? '원시 신뢰도' : '신뢰도', '진입가', '목표가', '손절가', '예상수익', '팩터'].map(h => (
+            {['#', '종목', '코드', '출처', isAbs ? '원시 신뢰도' : '신뢰도', '순위', '진입가', '목표가', '손절가', '예상수익', '팩터'].map(h => (
               <th key={h} style={{ padding: '10px 12px', fontWeight: 600, color: 'var(--fg-2)', textAlign: 'left', fontFamily: 'var(--font-mono)', fontSize: '0.71rem', whiteSpace: 'nowrap' }}>{h}</th>
             ))}
           </tr>
@@ -104,6 +119,7 @@ function StockTable({ items, isAbs, loading }) {
               <td style={{ padding: '9px 12px', fontFamily: 'var(--font-mono)', color: 'var(--fg-3)', fontSize: '0.75rem' }}>{s.code}</td>
               <td style={{ padding: '9px 12px' }}><SourceBadge source={s.source} absMode={isAbs} /></td>
               <td style={{ padding: '9px 12px' }}><ConfBar value={s.confidence} raw={isAbs} /></td>
+              <td style={{ padding: '9px 12px' }}><RankBadge pct={s.model_rank_pct} /></td>
               <td style={{ padding: '9px 12px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>{fmtP(s.entry)}</td>
               <td style={{ padding: '9px 12px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--up)', fontWeight: 600 }}>{fmtP(s.target)}</td>
               <td style={{ padding: '9px 12px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--down)' }}>{fmtP(s.stop)}</td>
@@ -115,7 +131,7 @@ function StockTable({ items, isAbs, loading }) {
             </tr>
           ))}
           {!items.length && (
-            <tr><td colSpan={10} style={{ textAlign: 'center', padding: '48px', color: 'var(--fg-3)' }}>
+            <tr><td colSpan={11} style={{ textAlign: 'center', padding: '48px', color: 'var(--fg-3)' }}>
               추천 데이터가 없습니다. <code>python -m XGBoost_v2.daily_recommend</code> 를 실행해주세요.
             </td></tr>
           )}

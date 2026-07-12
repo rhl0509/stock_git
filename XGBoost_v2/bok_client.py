@@ -29,14 +29,36 @@ BOK_KEY = os.getenv("BOK_API_KEY", "")
 CACHE_HOURS = 24
 CACHE_FILE = CACHE_DIR / 'macro.json'
 
-# ECOS 통계표 코드
+# ECOS 통계표 코드 (라이브 우선 시도용 — 아래 3개는 2026-07 개편으로 폐지됨)
 INDICATORS = {
-    "kospi":    ("901Y014", "0001000", "D"),    # KOSPI 일별
-    "usdkrw":   ("731Y003", "0000001", "D"),    # 원/달러 일별
-    "call_rate":("722Y001", "01011000","D"),    # 콜금리 일별
+    "kospi":    ("901Y014", "0001000", "D"),    # KOSPI 일별 (D주기 폐지 → 폴백)
+    "usdkrw":   ("731Y003", "0000001", "D"),    # 원/달러 일별 (아이템 폐지 → 폴백)
+    "call_rate":("722Y001", "01011000","D"),    # 콜금리 일별 (아이템 폐지 → 폴백)
     "cpi":      ("901Y009", "0",       "M"),    # CPI 월별
-    "bond_3y":  ("817Y002", "010190000","D"),   # 국고채 3년 일별
+    "bond_3y":  ("817Y002", "010190000","D"),   # 국고채 3년 일별 (정상 — 라이브 유지)
 }
+
+# ── ECOS 폴백 코드 ──────────────────────────────────────────────────────────
+# 2026-07 실측(macro_history.py와 동일): INDICATORS의 3개가 ECOS 개편으로
+# INFO-200(데이터 없음) → 라이브 캐시가 0.0으로 무효화되던 버그. 검증된 대체 코드로 폴백.
+#   kospi     901Y014/0001000  → 802Y001/0001000   (KOSPI지수 D, 1995~)
+#   usdkrw    731Y003/0000001  → 731Y003/0000003   (원/달러 종가 15:30, 1990~)
+#   call_rate 722Y001/01011000 → 817Y002/010101000 (콜금리 1일 전체거래, 1995~)
+# 조회는 라이브(INDICATORS) 코드를 먼저 시도하고, 비면 아래 폴백을 쓴다.
+_ECOS_FALLBACKS = {
+    "kospi":     ("802Y001", "0001000",   "D"),
+    "usdkrw":    ("731Y003", "0000003",   "D"),
+    "call_rate": ("817Y002", "010101000", "D"),
+}
+
+
+def _fetch_with_fallback(name: str, n: int = 30):
+    """INDICATORS[name] 라이브 코드 우선, 빈 응답이면 _ECOS_FALLBACKS로 재시도."""
+    vals = _fetch_indicator(*INDICATORS[name], n=n)
+    if not vals and name in _ECOS_FALLBACKS:
+        logger.info(f"[bok] {name}: 라이브 코드 실패 → 폴백 {_ECOS_FALLBACKS[name][0]}")
+        vals = _fetch_indicator(*_ECOS_FALLBACKS[name], n=n)
+    return vals
 
 
 def _load_cache():
@@ -104,7 +126,7 @@ def get_macro_features() -> dict:
 
     result = {}
     # KOSPI
-    kospi = _fetch_indicator(*INDICATORS["kospi"], n=30)
+    kospi = _fetch_with_fallback("kospi", n=30)
     if kospi and len(kospi) >= 20:
         result["kospi_ret_20d"] = round(
             (kospi[-1] - kospi[-20]) / kospi[-20], 4)
@@ -115,7 +137,7 @@ def get_macro_features() -> dict:
         result["kospi_trend"]   = 0.0
 
     # 환율
-    usd = _fetch_indicator(*INDICATORS["usdkrw"], n=30)
+    usd = _fetch_with_fallback("usdkrw", n=30)
     if usd and len(usd) >= 20:
         result["usdkrw_ret_20d"] = round((usd[-1] - usd[-20]) / usd[-20], 4)
     else:
@@ -125,10 +147,15 @@ def get_macro_features() -> dict:
     bond = _fetch_indicator(*INDICATORS["bond_3y"], n=5)
     result["bond_3y"] = float(bond[-1]) if bond else 0.0
 
-    call = _fetch_indicator(*INDICATORS["call_rate"], n=5)
+    call = _fetch_with_fallback("call_rate", n=5)
     result["call_rate"] = float(call[-1]) if call else 0.0
 
-    _save_cache(result)
+    # 전 지표 조회 실패(전부 0.0)면 캐시에 저장하지 않는다 — 일시적 실패가
+    # 24h 동안 0.0으로 굳는 것을 방지(macro_history 가드와 동일 취지).
+    if any(v != 0.0 for v in result.values()):
+        _save_cache(result)
+    else:
+        logger.warning("[bok] 전 거시지표 0.0 (조회 실패) → 캐시 저장 안 함")
     return result
 
 

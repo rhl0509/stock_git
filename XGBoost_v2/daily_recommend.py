@@ -524,6 +524,12 @@ def _make_pick(row: pd.Series, category: str,
 
     expected = (target - price) / price if price else 0.0
 
+    # 순수 모델 점수의 횡단면 퍼센타일 랭크 (0~1, 1=유니버스 최상위).
+    # 홀드아웃 검증 결과 edge 는 절대 conf 가 아니라 이 상대 순위에 있다. 참고 지표로 노출.
+    mp = row.get(f"model_pct_{category}")
+    model_rank_pct = (round(float(mp), 4)
+                      if mp is not None and pd.notna(mp) else None)
+
     return {
         "code":            code,
         "name":            row.get("Name", code),
@@ -534,6 +540,7 @@ def _make_pick(row: pd.Series, category: str,
         "stop":            stop,
         "expected_return": round(expected, 4),
         "confidence":      round(conf, 4),
+        "model_rank_pct":  model_rank_pct,   # 횡단면 상대순위 (edge 지표) — None=모델 미적용
         "source":          "model" if row.get("has_model") else "factor",
         "eps": int(row.get("eps", 0) or 0),
         "factors": {
@@ -651,6 +658,19 @@ def run_daily(top: Optional[int] = 15,
             mc * 0.60 + fc_cat * 0.40,
             fc_cat,
         )
+
+    # 5-b) 순수 모델 점수의 횡단면 퍼센타일 랭크 (model_pct_{label}, 0~1, 1=최상위).
+    # 검증에서 edge 가 확인된 지표(절대 conf 아닌 상대 순위). 픽에 참고로 노출.
+    # rank(pct=True)는 단조변환 불변이라 normalize 전/후 무관. 모델 미적용 종목은 NaN.
+    for _lbl in ("daily", "short", "swing"):
+        mcol = f"model_conf_{_lbl}"
+        pcol = f"model_pct_{_lbl}"
+        universe[pcol] = np.nan
+        if mcol in universe.columns:
+            m_mask = has_m & universe[mcol].notna()
+            if m_mask.any():
+                universe.loc[m_mask, pcol] = (
+                    universe.loc[m_mask, mcol].rank(ascending=True, pct=True))
 
     # 6) 필터링 & 픽
     size = top if top else 50
