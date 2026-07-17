@@ -22,6 +22,12 @@ routes/stock_ml.py
   디버깅  : trading.feature.build_features() 34개 — GET /ml/features 의 비교용.
             v1 계보라 XGBoost_v2 모델(82개)과 호환되지 않는다(교집합 16개).
 
+■ signal 어휘 — 두 경로 모두 BUY/SELL/HOLD (프론트 ML_META 키와 일치)
+  XGBoost : BUY/HOLD 만. 라벨이 "N일 내 목표수익 달성 AND 낙폭 제한" 이라 여집합에
+            횡보가 섞여 매도 근거가 없다(trading/signal.py 참고).
+  LR      : BUY/SELL/HOLD. 라벨이 "5일 후 상승 vs 하락" 대칭이라 매도가 성립한다.
+            임계값 LR_BUY_PROB/LR_SELL_PROB (기본 0.60, 사이는 HOLD).
+
 ■ 유지된 기존 라우트 (UI 호환)
   POST /stock/ml/predict       ← 기존 UI 호환
   GET  /stock/ml/cache         ← 캐시 상태
@@ -37,6 +43,7 @@ routes/stock_ml.py
 """
 
 import logging
+import os
 from fastapi import APIRouter, Request, Depends, Body
 from fastapi.responses import JSONResponse
 from routes.utils import api_require_login, require_login_smart
@@ -49,6 +56,37 @@ router = APIRouter(dependencies=[Depends(require_login_smart)])
 logger = logging.getLogger(__name__)
 
 _CACHE_FILE = Path(__file__).parent.parent / 'XGBoost_v2' / 'model' / 'ml_lr_cache.json'
+
+# LR 폴백의 BUY/SELL 임계값 — trading/trader.py RiskConfig 및 trading/signal.py 와
+# 같은 env 키·기본값을 쓴다(레포 단일 규약). 사이 구간은 HOLD.
+# 잘못된 값이면 import 가 죽어 라우터 전체가 사라지므로 기본값으로 되돌린다.
+def _env_prob(key: str, default: float) -> float:
+    raw = os.getenv(key)
+    if raw is None or raw.strip() == '':
+        return default
+    try:
+        v = float(raw)
+    except ValueError:
+        logger.warning(f'[stock_ml] {key}={raw!r} 를 실수로 읽을 수 없음 → 기본값 {default}')
+        return default
+    if not 0.0 < v < 1.0:
+        logger.warning(f'[stock_ml] {key}={v} 가 (0,1) 밖 → 기본값 {default}')
+        return default
+    return v
+
+
+LR_BUY_PROB  = _env_prob('MIN_BUY_PROB',  0.60)
+LR_SELL_PROB = _env_prob('MIN_SELL_PROB', 0.60)
+
+# LR 모델이 신호를 낼 자격 — 실측(2026-07-17, KOSPI 표본 8종목) 근거:
+#   퇴화 2/8 : baseline≈0 (검증 구간에 상승 사례가 없어 "항상 하락"만 찍고 acc=1.0)
+#   무실력 5/8: lift≤0.02, 그중 4개는 음수(-0.08~-0.04) = 다수 클래스 찍기보다 못함
+#   실실력 1/8
+# parquet 없는 400종목은 대부분 ETF 라, 5일 방향을 기술적 지표로 맞추는 모델에
+# 실력이 없다. 자격 미달 모델의 BUY/SELL 은 노이즈를 신호로 승격시키므로 HOLD 로 낮춘다.
+# (trading/signal.py 에서 매도 라벨 없는 모델의 SELL 을 뺀 것과 같은 원칙.)
+LR_MIN_LIFT = _env_prob('LR_MIN_LIFT', 0.02)          # baseline 대비 최소 개선폭
+_LR_DEGENERATE_BASELINE = 0.05                        # baseline 이 이 밖이면 한쪽 클래스뿐
 
 _MODEL_CACHE: dict = {}
 _cache_lock  = threading.Lock()
@@ -347,14 +385,38 @@ def _train_model(code: str, ticker_yfin: str = ""):
 
 def _predict_lr(model: LogisticRegressionNumpy,
                 close, high, low, volume) -> dict:
+    """
+    LR 폴백 예측. signal 은 BUY/SELL/HOLD 로 낸다.
+
+    2026-07-17 이전에는 '상승'/'하락' 을 반환했는데, 프론트는 BUY/SELL/HOLD 만 안다:
+      - StockDetail.jsx:44  `ML_META[signal] || ML_META.HOLD` → 한글 키가 없으니
+        상승 확률 83% 종목이 조용히 **"관망"** 으로 표시됐다(오표시, 무증상).
+      - CompanyResearch.jsx:64 `[sig] || {label: sig}` → 원문 노출 + 회색 처리.
+    XGBoost 경로(trading/signal.py)와 어휘를 통일한다.
+
+    ■ 왜 여기서는 SELL 을 내는가 (trading/signal.py 는 안 내는데)
+      LR 라벨은 _train_model 의 `target = (5일 후 수익률 > 0)` — **대칭 방향 라벨**이라
+      P(하락) = 1 - P(상승) 이 그대로 성립한다. 반면 XGBoost_v2 라벨은 "N일 내 목표수익
+      달성 AND 낙폭 제한" 이라 여집합에 횡보·목표미달이 섞여 매도 근거가 되지 못한다.
+    """
     X, _ = _compute_features(close, high, low, volume)
-    last  = X[-1:]
-    prob  = float(model.predict_proba(last)[0, 1])
-    pred  = int(model.predict(last)[0])
+    last = X[-1:]
+    prob_up   = float(model.predict_proba(last)[0, 1])
+    prob_down = 1.0 - prob_up
+
+    # 이진 예측(prob>=0.5)을 그대로 매핑하면 51% 도 BUY 가 된다. 관망 구간을 둔다.
+    if prob_up >= LR_BUY_PROB:
+        signal = 'BUY'
+    elif prob_down >= LR_SELL_PROB:
+        signal = 'SELL'
+    else:
+        signal = 'HOLD'
+
     return {
-        'prob_up':    round(prob * 100, 1),
-        'prob_down':  round((1 - prob) * 100, 1),
-        'signal':     '상승' if pred == 1 else '하락',
+        'prob_up':    round(prob_up * 100, 1),
+        'prob_down':  round(prob_down * 100, 1),
+        'signal':     signal,
+        'confidence': round(prob_up, 4),
         'model_type': 'LogisticRegressionNumpy',
     }
 
@@ -369,6 +431,41 @@ def _predict_xgb(ticker: str, ticker_name: str,
         return result
     except Exception:
         return None
+
+
+def _gate_lr_signal(result: dict) -> dict:
+    """
+    실력이 측정되지 않은 LR 모델의 BUY/SELL 을 HOLD 로 낮춘다.
+
+    왜 필요한가: _predict_lr 은 prob_up 만 보고 임계값을 건다. 그런데 모델 자체가
+    베이스라인 이하이거나(lift≤0) 검증 구간이 한쪽 클래스뿐이면(baseline≈0/1),
+    그 prob_up 은 근거가 없다. 화면에 "매수 83%"로 뜨면 사용자는 실행 가능한
+    신호로 읽는다. 자격 미달이면 관망으로 낮추고 이유를 함께 싣는다.
+    """
+    if result.get('signal') not in ('BUY', 'SELL'):
+        return result
+
+    lift     = result.get('lift')
+    baseline = result.get('baseline')
+    reason = None
+
+    if baseline is not None and (baseline <= _LR_DEGENERATE_BASELINE
+                                 or baseline >= 1.0 - _LR_DEGENERATE_BASELINE):
+        reason = (f'검증 구간이 한쪽 클래스뿐(baseline={baseline:.1%}) — '
+                  f'모델이 방향을 학습하지 못함')
+    elif lift is not None and lift < LR_MIN_LIFT:
+        reason = (f'베이스라인 대비 개선 {lift:+.1%} < 기준 {LR_MIN_LIFT:.0%} — '
+                  f'실력이 확인되지 않음')
+
+    if reason is None:
+        return result
+
+    downgraded = dict(result)
+    downgraded['signal'] = 'HOLD'
+    downgraded['signal_downgraded_from'] = result['signal']
+    downgraded['signal_note'] = reason
+    logger.info(f"[stock_ml] LR 신호 {result['signal']}→HOLD: {reason}")
+    return downgraded
 
 
 def get_ml_prediction(code: str, ticker_yfin: str = "",
@@ -403,7 +500,8 @@ def get_ml_prediction(code: str, ticker_yfin: str = "",
     except Exception as e:
         return {'error': f"예측 오류: {e}"}
 
-    result = {**pred, **meta_or_err}
+    # meta 의 lift/baseline 이 있어야 신호 자격을 판정할 수 있으므로 병합 후에 건다.
+    result = _gate_lr_signal({**pred, **meta_or_err})
     with _cache_lock:
         _MODEL_CACHE[code] = {'trained_date': today, 'result': result}
     _save_cache_file()
