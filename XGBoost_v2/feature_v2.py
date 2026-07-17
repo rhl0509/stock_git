@@ -1,5 +1,9 @@
 """
-feature_v2.py — 53개 통합 피처 빌드 (v2.1).
+feature_v2.py — 통합 피처 빌드 (v2.1).
+
+현재 피처 수는 FULL_COLS 로 결정된다 — len(FULL_COLS) == 82
+(기술 36 + 정적 35[재무13·공시5·뉴스6·수급5·공매도3·섹터3] + 거시 11).
+학습된 모델의 실제 개수는 model/train_report_v2.json 의 n_features 를 볼 것.
 
 v2.0 → v2.1 변경:
   기술적 피처  24 → 32개:
@@ -9,14 +13,19 @@ v2.0 → v2.1 변경:
     + ret_vs_market, rsi_vs_market    (시장 상대 강도)
   공시 피처     4 → 5개:
     + days_since_disclosure           (이벤트 시차)
-  재무 피처    11개 — PIT(Point-in-Time) 매칭 지원
-  거시 피처     5개 (변경 없음)
-  = 총 53개  (기존 모델과 호환 불가 → 재학습 필요)
+  재무 피처    PIT(Point-in-Time) 매칭 지원
+  (기존 모델과 호환 불가 → 재학습 필요)
+
+■ 학습 경로 선택 (look-ahead 누수와 직결)
+  build_full_matrix      : 현재 시점 정적 피처를 과거 전 행에 복제 → **학습에 쓰면 누수**.
+                           추론(daily_recommend·signal)에서만 쓸 것.
+  build_full_matrix_pit  : 과거 행에는 as-of 로 알 수 있는 값만. 학습은 이쪽(use_pit=True).
 """
 import logging
 import numpy as np
 import pandas as pd
 
+from .kr_finance_client import PIT_FILING_LAG_DAYS
 from .quant_gate import compute_hurst
 
 from .fmp_client        import (get_financial_features, get_financial_features_pit,
@@ -298,7 +307,8 @@ def build_full_matrix_pit(tech_df: pd.DataFrame,
     PIT(Point-in-Time) 재무 매칭 행렬 빌드.
 
     각 행의 날짜 기준으로 해당 시점에 공시됐을 가장 최신 분기 재무를 선택.
-    공시 추정 = period_end + 45일 (한국 기업 평균 신고 기한).
+    공시 추정 = period_end(사업연도 종료 12/31) + PIT_FILING_LAG_DAYS(90일)
+              ≈ 다음 해 3/31 = 한국 사업보고서 제출 시한.
     """
     df = tech_df.copy()
 
@@ -306,12 +316,18 @@ def build_full_matrix_pit(tech_df: pd.DataFrame,
     history_sorted = sorted(quarterly_history,
                              key=lambda q: q.get("period_end", ""))
 
-    for col in MACRO_COLS:
-        df[col] = macro.get(col, 0.0)
-
-    # 공시/뉴스/수급/공매도 정적 (PIT 미지원 — 현재 시점 값 브로드캐스트)
-    for col in DISCLOSURE_COLS + NEWS_COLS + INVESTOR_COLS + SHORT_COLS + SECTOR_COLS:
-        df[col] = disc_news.get(col, 0.0)
+    # ⚠ look-ahead 누수 방지 (PIT 학습 경로):
+    # 공시/뉴스/수급/공매도/상대강도/거시 피처는 '현재 시점' 스냅샷만 존재한다.
+    # 과거 학습 행에 현재 값을 브로드캐스트하면 미래 정보 누수이므로,
+    # as-of(해당 날짜 기준) 값을 알 수 없는 과거 행에는 중립 기본값을 넣는다
+    # (0.0, 단 days_since_disclosure 는 '최근 공시 없음' = 999).
+    # 학습 중 상수 컬럼이 되어 트리 분기가 생기지 않으므로 예측 시 실제 값이
+    # 들어와도 안전하다. 이 피처들을 실제로 활용하려면 일별 as-of 히스토리를
+    # 적재해 merge_asof 로 매칭해야 함 (NEEDS-USER — disc_news/macro 인자는
+    # 시그니처 호환을 위해 유지).
+    _neutral = {"days_since_disclosure": 999.0}
+    for col in MACRO_COLS + DISCLOSURE_COLS + NEWS_COLS + INVESTOR_COLS + SHORT_COLS + SECTOR_COLS:
+        df[col] = _neutral.get(col, 0.0)
 
     # 재무: 날짜별 PIT 매칭
     fin_defaults = {c: 0.0 for c in FINANCIAL_COLS}
@@ -324,7 +340,11 @@ def build_full_matrix_pit(tech_df: pd.DataFrame,
             pit = fin_defaults.copy()
             for q in history_sorted:
                 try:
-                    est_filing = pd.Timestamp(q["period_end"]) + pd.Timedelta(days=45)
+                    # 사업연도 종료(12/31) + 90d ≈ 다음 해 3/31 = 한국 사업보고서 제출 시한.
+                    # kr_finance_client._pit_history 와 반드시 같은 값이어야 한다
+                    # (한쪽만 45d 면 실제 공시보다 ~45일 이른 재무를 보는 잔여 누수).
+                    est_filing = (pd.Timestamp(q["period_end"])
+                                  + pd.Timedelta(days=PIT_FILING_LAG_DAYS))
                 except Exception:
                     continue
                 if est_filing <= filing_cutoff:

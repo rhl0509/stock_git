@@ -31,3 +31,7 @@ trading/model/
 
 # ── 빌드 산출물 ──
 static/spa/
+
+# 시크릿 파일의 사본이 추적되지 않도록 (.env 는 막히지만 .env.bak_20260717 은 안 막힌다)
+*.bak
+*.bak_*

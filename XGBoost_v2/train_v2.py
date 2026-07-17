@@ -33,11 +33,15 @@ load_dotenv()
 
 import numpy as np
 import pandas as pd
+# walk_forward_cv / get_oof_predictions 가 폴드마다 fit 하므로 모듈 레벨에 둔다
+# (예전에는 main() 안에서만 임포트했다).
+from sklearn.preprocessing import StandardScaler
 
 from .collect_v2 import load_ohlcv, list_collected, load_ticker_meta
 from .feature_v2 import (
     build_technical, build_static_features, get_macro,
     build_full_matrix, build_full_matrix_pit, FULL_COLS,
+    PIT_FILING_LAG_DAYS,
 )
 from .fmp_client import get_quarterly_history
 
@@ -217,7 +221,19 @@ def build_training_data(
     dates_arr   = np.concatenate(all_dates)
     labels_dict = {k: np.concatenate(v) for k, v in all_labels.items()}
 
+    # ⚠ 시간 전역 정렬 — walk-forward CV 의 전제.
+    # 여기까지는 종목별 chunk 가 순서대로 쌓여 있을 뿐이라 행 순서 = 종목 순서다.
+    # 그 상태로 walk_forward_cv/get_oof_predictions 가 X[:val_start] 처럼 '위치'를
+    # 자르면, train 에 앞쪽 종목의 최신 데이터가 들어가고 val 에 뒤쪽 종목의 과거
+    # 데이터가 들어간다 — 이름만 walk-forward 이고 실제로는 미래→과거 누수다.
+    # 날짜로 전역 정렬해야 위치 슬라이싱이 곧 시간 분할이 된다.
+    order       = np.argsort(dates_arr, kind="stable")
+    X           = X[order]
+    dates_arr   = dates_arr[order]
+    labels_dict = {k: v[order] for k, v in labels_dict.items()}
+
     logger.info(f"[build] 종목 {len(used)}개 (스킵 {skipped}) | 샘플 {len(X):,} | 피처 {X.shape[1]}")
+    logger.info(f"[build] 기간 {np.min(dates_arr)} ~ {np.max(dates_arr)} (시간순 정렬됨)")
     for k, y in labels_dict.items():
         logger.info(f"  {k:6s}: BUY {int(y.sum())} ({y.mean():.1%})")
 
@@ -231,6 +247,15 @@ def build_training_data(
 def walk_forward_cv(X: np.ndarray, y: np.ndarray, params: dict,
                     n_splits: int = 5, n_rounds: int = 200,
                     sample_weight: np.ndarray | None = None) -> dict:
+    """
+    시간 분할 walk-forward CV.
+
+    ⚠ X 는 **스케일링 전(raw)** 을 넘길 것. 스케일러를 CV 밖에서 전체 데이터에 fit 하면
+    검증 폴드의 평균·분산이 학습에 새어 지표가 부풀려진다(preprocessing leakage).
+    폴드마다 train 구간에만 fit 해서 val 에 transform 한다.
+    또 X 는 build_training_data 가 날짜로 전역 정렬해 반환한 것이어야 한다 — 그래야
+    아래 위치 슬라이싱이 실제 시간 분할이 된다.
+    """
     import xgboost as xgb
     fold_size = len(X) // n_splits
     scores, aucs = [], []
@@ -239,11 +264,16 @@ def walk_forward_cv(X: np.ndarray, y: np.ndarray, params: dict,
         train_end = val_start
         if train_end < 60:
             continue
-        X_tr, y_tr = X[:train_end], y[:train_end]
-        X_val, y_val = X[val_start:val_start + fold_size], y[val_start:val_start + fold_size]
-        if len(X_tr) < 30 or len(X_val) < 10 or len(np.unique(y_tr)) < 2:
+        X_tr_raw, y_tr = X[:train_end], y[:train_end]
+        X_val_raw, y_val = X[val_start:val_start + fold_size], y[val_start:val_start + fold_size]
+        if len(X_tr_raw) < 30 or len(X_val_raw) < 10 or len(np.unique(y_tr)) < 2:
             continue
         sw_tr = sample_weight[:train_end] if sample_weight is not None else None
+
+        # 폴드 내 스케일링 — train 에만 fit
+        fold_scaler = StandardScaler().fit(X_tr_raw)
+        X_tr  = fold_scaler.transform(X_tr_raw).astype(np.float32)
+        X_val = fold_scaler.transform(X_val_raw).astype(np.float32)
 
         spw = (1 - y_tr.mean()) / (y_tr.mean() + 1e-9)
         dtrain = xgb.DMatrix(X_tr, label=y_tr, weight=sw_tr)
@@ -274,8 +304,17 @@ def walk_forward_cv(X: np.ndarray, y: np.ndarray, params: dict,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def get_oof_predictions(X: np.ndarray, y: np.ndarray,
-                        train_fn, n_splits: int = 5) -> np.ndarray:
-    """Walk-forward OOF 예측값 반환 (스태킹 메타피처용)."""
+                        train_fn, dates: np.ndarray | None = None,
+                        n_splits: int = 5) -> np.ndarray:
+    """
+    Walk-forward OOF 예측값 반환 (스태킹 메타피처용).
+
+    ⚠ X 는 walk_forward_cv 와 같은 이유로 **스케일링 전(raw)** 을 넘긴다.
+    dates 를 주면 폴드의 train 구간 실제 날짜를 train_fn 에 전달해 최신 가중치를
+    계산하게 한다(예전에는 np.arange 를 가짜 날짜로 변환해 써서 가중치가 무의미했다).
+
+    train_fn(X_tr, y_tr, X_val, sw_tr) — 스케일링된 배열과 샘플 가중치를 받는다.
+    """
     fold_size = len(X) // n_splits
     oof = np.zeros(len(X), dtype=np.float32)
     for fold in range(n_splits):
@@ -283,11 +322,19 @@ def get_oof_predictions(X: np.ndarray, y: np.ndarray,
         train_end = val_start
         if train_end < 60:
             continue
-        X_tr, y_tr = X[:train_end], y[:train_end]
-        X_val       = X[val_start:val_start + fold_size]
-        if len(X_tr) < 30 or len(np.unique(y_tr)) < 2:
+        X_tr_raw, y_tr = X[:train_end], y[:train_end]
+        X_val_raw      = X[val_start:val_start + fold_size]
+        if len(X_tr_raw) < 30 or len(np.unique(y_tr)) < 2:
             continue
-        preds = train_fn(X_tr, y_tr, X_val)
+
+        fold_scaler = StandardScaler().fit(X_tr_raw)
+        X_tr  = fold_scaler.transform(X_tr_raw).astype(np.float32)
+        X_val = fold_scaler.transform(X_val_raw).astype(np.float32)
+
+        sw_tr = (compute_sample_weights(dates[:train_end])
+                 if dates is not None else None)
+
+        preds = train_fn(X_tr, y_tr, X_val, sw_tr)
         oof[val_start:val_start + fold_size] = preds
     return oof
 
@@ -298,6 +345,7 @@ def get_oof_predictions(X: np.ndarray, y: np.ndarray,
 
 def optuna_tune(X, y, n_trials: int = 20,
                 sample_weight=None) -> tuple[dict, int]:
+    """⚠ X 는 walk_forward_cv 로 그대로 넘어간다 — 스케일링 전(raw)을 줄 것."""
     try:
         import optuna
         optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -371,7 +419,7 @@ def train_all(tickers: list[str], train_end: str = "",
               use_pit: bool = True,
               labels: list[str] | None = None):
     import xgboost as xgb
-    from sklearn.preprocessing import StandardScaler
+    # StandardScaler 는 모듈 레벨에서 임포트한다 (CV 폴드에서도 쓰이므로)
     from sklearn.linear_model  import LogisticRegression
 
     # LightGBM 옵션
@@ -412,7 +460,10 @@ def train_all(tickers: list[str], train_end: str = "",
     X_raw, dates_arr, labels_dict, feature_names, used_tickers = build_training_data(
         tickers, train_end=train_end_dt, use_pit=use_pit, market_df=market_df)
 
-    # 정규화
+    # 정규화 — **배포 모델 전용**.
+    # 배포 모델은 전체 학습 데이터를 쓰는 게 맞으므로 여기서 fit 해 저장한다.
+    # 단 CV·OOF 에는 X_scaled 를 넘기면 안 된다(검증 폴드 통계가 새어 지표가 부풀려짐).
+    # 그쪽은 X_raw 를 받아 폴드 안에서 train 구간에만 fit 한다.
     scaler   = StandardScaler()
     X_scaled = scaler.fit_transform(X_raw).astype(np.float32)
 
@@ -437,12 +488,13 @@ def train_all(tickers: list[str], train_end: str = "",
             params, n_rounds = _default_params()
         else:
             logger.info(f"[train] Optuna {n_trials}회 튜닝...")
-            params, n_rounds = optuna_tune(X_scaled, y, n_trials,
+            params, n_rounds = optuna_tune(X_raw, y, n_trials,
                                            sample_weight=sample_weight)
             logger.info(f"[train] 최적: {params}")
 
         # ── CV ────────────────────────────────────────────────────────
-        cv = walk_forward_cv(X_scaled, y, params, n_rounds=n_rounds,
+        # raw 를 넘긴다 — 스케일러는 폴드 안에서 train 구간에만 fit 된다.
+        cv = walk_forward_cv(X_raw, y, params, n_rounds=n_rounds,
                              sample_weight=sample_weight)
         logger.info(f"  CV  AUC={cv['auc']:.4f}  Acc={cv['acc']:.4f}")
 
@@ -498,32 +550,31 @@ def train_all(tickers: list[str], train_end: str = "",
         # ── 스태킹 메타-러너 ──────────────────────────────────────────
         logger.info(f"  스태킹 OOF 생성 중...")
 
-        def xgb_train_fn(Xtr, ytr, Xval):
-            sw   = compute_sample_weights(np.arange(len(Xtr)).astype('datetime64[D]'))
+        # sw 는 get_oof_predictions 가 폴드의 실제 날짜로 계산해 넘겨준다.
+        # (예전에는 여기서 np.arange 를 datetime64 로 캐스팅해 1970-01-01 부터의
+        #  가짜 날짜를 만들었고, 행 순서가 시간순도 아니어서 가중치가 무의미했다.)
+        def xgb_train_fn(Xtr, ytr, Xval, sw):
             spw_ = (1 - ytr.mean()) / (ytr.mean() + 1e-9)
             d    = xgb.DMatrix(Xtr, label=ytr, weight=sw)
             b    = xgb.train({**params, "scale_pos_weight": spw_}, d,
                              num_boost_round=n_rounds, verbose_eval=False)
             return b.predict(xgb.DMatrix(Xval))
 
-        oof_xgb = get_oof_predictions(X_scaled, y, xgb_train_fn)
+        oof_xgb = get_oof_predictions(X_raw, y, xgb_train_fn, dates=dates_arr)
 
         meta_cols = [oof_xgb]
         if HAS_LGB:
-            def lgb_train_fn(Xtr, ytr, Xval):
-                sw_  = compute_sample_weights(
-                    np.arange(len(Xtr)).astype('datetime64[D]'))
+            def lgb_train_fn(Xtr, ytr, Xval, sw):
                 spw_ = (1 - ytr.mean()) / (ytr.mean() + 1e-9)
-                dtr  = lgb.Dataset(Xtr, label=ytr, weight=sw_)
+                dtr  = lgb.Dataset(Xtr, label=ytr, weight=sw)
                 lm   = lgb.train({**lgb_params, "scale_pos_weight": spw_},
                                  dtr, num_boost_round=n_rounds)
                 return lm.predict(Xval)
-            meta_cols.append(get_oof_predictions(X_scaled, y, lgb_train_fn))
+            meta_cols.append(get_oof_predictions(X_raw, y, lgb_train_fn,
+                                                 dates=dates_arr))
 
         if HAS_CAT:
-            def cat_train_fn(Xtr, ytr, Xval):
-                sw_  = compute_sample_weights(
-                    np.arange(len(Xtr)).astype('datetime64[D]'))
+            def cat_train_fn(Xtr, ytr, Xval, sw):
                 spw_ = (1 - ytr.mean()) / (ytr.mean() + 1e-9)
                 cm   = CatBoostClassifier(
                     iterations=n_rounds,
@@ -532,9 +583,10 @@ def train_all(tickers: list[str], train_end: str = "",
                     class_weights=[1.0, float(spw_)],
                     random_seed=42, verbose=0,
                 )
-                cm.fit(Xtr, ytr, sample_weight=sw_)
+                cm.fit(Xtr, ytr, sample_weight=sw)
                 return cm.predict_proba(Xval)[:, 1]
-            meta_cols.append(get_oof_predictions(X_scaled, y, cat_train_fn))
+            meta_cols.append(get_oof_predictions(X_raw, y, cat_train_fn,
+                                                 dates=dates_arr))
 
         meta_X = np.column_stack(meta_cols) if len(meta_cols) > 1 else meta_cols[0].reshape(-1, 1)
 
@@ -597,6 +649,15 @@ def train_all(tickers: list[str], train_end: str = "",
         "n_samples":   int(len(X_raw)),
         "n_features":  int(X_raw.shape[1]),
         "use_pit":     use_pit,
+        # 검증 설계 — CV 지표를 어떤 조건에서 얻었는지 아티팩트에 못 박는다.
+        # (2026-07-17 이전 모델은 셋 다 없었다: 행이 종목순이라 walk-forward 가
+        #  시간 분할이 아니었고, 스케일러를 CV 전에 전체 fit 했으며, PIT 기한이
+        #  feature_v2 45d / kr_finance_client 90d 로 어긋나 있었다.)
+        "cv_time_ordered":     True,
+        "cv_scaler_in_fold":   True,
+        "pit_filing_lag_days": PIT_FILING_LAG_DAYS,
+        "data_start":          str(np.min(dates_arr)),
+        "data_end":            str(np.max(dates_arr)),
         "labels":      reports,
         "tickers":     used_tickers,
     }

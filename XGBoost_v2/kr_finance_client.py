@@ -9,7 +9,7 @@ fmp_client.py 와 동일한 공개 인터페이스 유지:
   get_financial_features()      → dict (13개, TTM)
   get_financial_features_pit()  → dict (PIT 매칭)
   get_quarterly_history()       → list[dict] (연간 이력 최대 4년)
-  FINANCIAL_COLS, _FIN_DEFAULTS
+  FINANCIAL_COLS, _FIN_DEFAULTS, PIT_FILING_LAG_DAYS
 
 캐시:
   data/cache/kr_fin/fin_{code}.json     24h
@@ -31,6 +31,13 @@ logger = logging.getLogger(__name__)
 ROOT      = Path(__file__).parent
 CACHE_DIR = ROOT / "data" / "cache" / "kr_fin"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# PIT(Point-in-Time) 공시 시점 추정 지연.
+# get_quarterly_history 의 period_end 는 실제 사업연도 종료일(12/31)이고,
+# 한국 사업보고서 제출 시한은 다음 해 3/31 이므로 +90일.
+# ⚠ feature_v2.build_full_matrix_pit 의 재무 매칭도 반드시 이 값을 쓴다 — 한쪽만
+# 다르면 실제 공시보다 이른 재무를 보는 look-ahead 누수가 된다. 단일 소스로 유지할 것.
+PIT_FILING_LAG_DAYS = 90
 
 DART_KEY             = os.getenv("DART_API_KEY", "")
 CACHE_HOURS          = 24
@@ -373,8 +380,8 @@ def get_quarterly_history(code: str, market: str = "KOSPI") -> list[dict]:
     """
     연간 재무 이력 (최대 4년). PIT 학습용.
 
-    period_end = {year}-02-15 설정:
-      → est_filing = period_end + 45d = 4/1 ≈ 한국 사업보고서 제출 시한
+    period_end = {year}-12-31 (실제 사업연도 종료일):
+      → est_filing = period_end + 90d ≈ 다음 해 3/31 (한국 사업보고서 제출 시한)
     반환: [{period_end, pe_ratio, pb_ratio, ..., revenue_growth_yoy}, ...]  (최신순)
     """
     cache_key = f"qhist_{code}"
@@ -407,8 +414,11 @@ def get_quarterly_history(code: str, market: str = "KOSPI") -> list[dict]:
         mktcap = _pykrx_market_cap(code, ref_date=datetime(year, 12, 31))
 
         entry = _merge(code, pykrx_d, dart_d, mktcap=mktcap)
-        # period_end: 사업연도 종료(12/31) 기준으로 +45d = 4/1 이 되도록 2/15 설정
-        entry["period_end"] = f"{year}-02-15"
+        # period_end = 실제 사업연도 종료일(12/31).
+        # (과거에 2/15로 두던 방식은 FY(year) 재무가 같은 해 4/1에 공시된 것으로
+        #  취급되어 실제 공시(다음 해 3월 말)보다 ~1년 앞선 look-ahead 누수 발생)
+        # 공시 가능 시점 추정은 PIT 매칭 쪽에서 period_end + 90d(≈다음 해 3/31)로 계산.
+        entry["period_end"] = f"{year}-12-31"
         history.append(entry)
 
         time.sleep(0.3)   # DART rate limit 완화
@@ -435,7 +445,8 @@ def get_financial_features_pit(code: str, market: str = "KOSPI",
     best = None
     for q in sorted(history, key=lambda x: x.get("period_end", "")):
         try:
-            est = _pd.Timestamp(q["period_end"]) + _pd.Timedelta(days=45)
+            # 사업연도 종료(12/31) + 90d ≈ 다음 해 3/31 사업보고서 제출 시한
+            est = _pd.Timestamp(q["period_end"]) + _pd.Timedelta(days=PIT_FILING_LAG_DAYS)
         except Exception:
             continue
         if est <= cutoff:
