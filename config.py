@@ -19,7 +19,7 @@ class Config:
     MYSQL_HOST     = os.getenv('DB_HOST', 'localhost')
     MYSQL_USER     = os.getenv('DB_USER', 'root')
     MYSQL_PASSWORD = os.getenv('DB_PASSWORD', '')
-    MYSQL_DB       = os.getenv('DB_NAME', 'expense_tracker')
+    MYSQL_DB       = os.getenv('DB_NAME', 'stock_stack')
 
     MYSQL_CURSORCLASS = 'DictCursor'
 

@@ -10,7 +10,7 @@
 |---|---|
 | Python | 3.10+ (코드에서 `X | None` 유니온 문법 사용) |
 | Node.js | 18+ (프론트 빌드용) |
-| MySQL | 8.x, DB명 `expense_tracker` (UTF-8 `utf8mb4`) |
+| MySQL | 8.x, DB명 `stock_stack` (UTF-8 `utf8mb4`) |
 | OS | Windows / Linux 무관 (현재 Windows에서 운영) |
 
 > 키움 API 연동(`/api/kiwoom/*`)은 32bit 콜렉터·네이티브 환경 전제라 Windows에서만 동작. 그 외 기능은 OS 무관.
@@ -19,8 +19,14 @@
 
 ## 2. 코드 배치
 
-`D:\stock_git`은 git 저장소가 아니므로 **파일 복사 방식**으로 배포한다.
+`D:\stock_git`은 git 저장소다(원격 `origin`, 브랜치 `main`). 배포는 clone/pull 로 한다.
 빌드 산출물 `static/spa/`는 `.gitignore` 대상이므로 **배포 서버에서 직접 빌드**하거나 산출물을 함께 복사해야 한다.
+
+> `templates/` 의 Jinja2 화면은 2026-07-17에 정리해 3개(`stock/reports.html`,
+> `stock/report_detail.html`, `stock/stock_layout.html`)만 남았다. 이 3개는
+> `routes/reports.py` 가 `render()` 를 우회해 직접 렌더하므로 SPA 모드에서도 쓰인다.
+> 나머지 화면은 전부 React SPA(`static/spa/`)가 담당하므로 **SPA 빌드 없이는 기동해도
+> 화면이 뜨지 않는다** — 배포 시 빌드 산출물이 있는지 반드시 확인할 것.
 
 ---
 

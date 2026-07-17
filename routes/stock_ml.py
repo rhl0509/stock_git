@@ -4,16 +4,23 @@ routes/stock_ml.py
 주가 방향성 예측 라우터.
 
 ■ 모델 전략 (32비트 Python 환경 고려)
-  Primary  : LogisticRegressionNumpy — numpy only, 항상 동작 (32비트 완전 호환)
-  Optional : XGBoost (trading/signal.py) — 64비트 환경 또는 별도 프로세스에서 사용
+  Primary  : XGBoost_v2 앙상블 (trading/signal.py) — 64비트 환경에서 동작
+  Fallback : LogisticRegressionNumpy — numpy only, 항상 동작 (32비트 완전 호환)
+
+  _predict_xgb() 가 먼저 시도하고, 실패(모델 없음·OHLCV 부족)하면 LR 로 떨어진다.
+  2026-07-17 이전에는 trading/signal.py 에 predict 가 없어(파일 내용이 학습 스크립트였다)
+  XGBoost 경로가 항상 ImportError 로 죽고 LR 만 동작했다.
 
 ■ 데이터 소스
   Primary  : kiwoom_worker.get_ohlcv() — 키움 로그인 시 실시간 일봉
   Fallback : yfinance — 키움 미로그인 시 해외/테스트용
+  XGBoost 경로는 XGBoost_v2/data/ohlcv/*.parquet (수집기가 적재) 를 쓴다.
 
 ■ 피처셋
-  Primary  : _compute_features() — numpy only 기술적 지표 (기존 유지)
-  Optional : trading.feature.build_features() — 수급/거시/공시/뉴스 포함 풀 피처셋
+  XGBoost : XGBoost_v2/feature_v2.py 82개 (signal.py 가 호출)
+  LR      : _compute_features() — numpy only 기술적 지표
+  디버깅  : trading.feature.build_features() 34개 — GET /ml/features 의 비교용.
+            v1 계보라 XGBoost_v2 모델(82개)과 호환되지 않는다(교집합 16개).
 
 ■ 유지된 기존 라우트 (UI 호환)
   POST /stock/ml/predict       ← 기존 UI 호환
@@ -78,7 +85,7 @@ _load_cache_file()
 def _get_ohlcv(code: str, ticker_yfin: str = "", count: int = 500):
     try:
         from kiwoom_client import kiwoom
-        if kiwoom.get_login_state() == 1:
+        if kiwoom.market_data_ready():
             df = kiwoom.get_ohlcv(code, count=count)
             if df is not None and not df.empty and len(df) >= 60:
                 return (

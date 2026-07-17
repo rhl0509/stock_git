@@ -1,13 +1,15 @@
 """auto_jobs.py — 서버 내장 스케줄러(APScheduler) 자동화 잡 모음.
 
-app.py 시작 시 register(scheduler)로 등록된다. 기존 수동 작업의 자동화:
-  - 키움 포트폴리오 동기화   평일 15:50 (장마감 후)
-  - 배당 자동 기록            토요일 09:00
-  - 테마 인덱스 빌드          일요일 17:00
-  - 모델 백업                 일요일 01:30 (02:00 재학습 직전)
-  - DB 백업 (mysqldump)       매일 21:00, 14일 보관 (Windows StockTracker_DbBackup와 이중화)
+app.py 시작 시 register(scheduler)로 등록된다. register()가 실제로 거는 잡 7종:
+  - 배당 자동 기록            토요일 09:00      (auto_dividend)
+  - 모델 백업                 일요일 01:30      (auto_model_backup — 02:00 재학습 직전)
+  - DB 백업 (mysqldump)       매일 21:00        (auto_db_backup — 14일 보관)
+  - 오프사이트 백업            매일 03:00        (auto_offsite_backup)
+  - 자가진단                  매일 09:00        (auto_self_check — 이상 시에만 알림)
+  - 퀀트 스캔                 평일 16:25        (auto_quant_scan)
+  - 워크플로 디스패처          매분              (auto_workflow_dispatch)
 
-대상 사용자: OWNER_USER_NO 환경변수 → 없으면 보유종목/거래내역 있는 회원 자동 탐지.
+대상 사용자: OWNER_USER_NO 환경변수 필수 (미설정 시 잡 스킵 — 자동 탐지는 보안상 제거).
 """
 import gzip
 import logging
@@ -29,26 +31,26 @@ _MYSQLDUMP_CANDIDATES = [
 ]
 
 
+_owner_env_warned = False
+
+
 def get_owner_user_no() -> int | None:
-    """자동화 대상 사용자. OWNER_USER_NO env 우선, 없으면 데이터 보유 회원 자동 탐지."""
+    """자동화(및 소유자 게이트) 대상 사용자. OWNER_USER_NO env 를 명시적으로 요구한다.
+
+    과거에는 env 미설정 시 보유종목/거래내역 보유 회원 → MIN(id) 회원을 자동으로
+    소유자로 간주했으나, 임의 가입자(첫 회원)가 소유자/관리자 권한을 얻는 보안
+    문제가 있어 제거했다. env 미설정 시 None 을 반환하며 자동화 잡은 스킵되고
+    소유자 전용 엔드포인트는 fail-closed(403) 된다."""
+    global _owner_env_warned
     env = os.getenv('OWNER_USER_NO')
     if env and env.isdigit():
         return int(env)
-    from database.db_connection import get_db_connection
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            for sql in (
-                "SELECT member_id AS u FROM stock_holdings ORDER BY id LIMIT 1",
-                "SELECT member_id AS u FROM stock_transactions ORDER BY id LIMIT 1",
-                "SELECT MIN(id) AS u FROM members",
-            ):
-                cur.execute(sql)
-                row = cur.fetchone()
-                if row and row.get('u'):
-                    return int(row['u'])
-    finally:
-        conn.close()
+    if not _owner_env_warned:
+        _owner_env_warned = True
+        logger.warning(
+            "[auto_jobs] OWNER_USER_NO 환경변수 미설정 — 소유자 자동 탐지는 보안상 "
+            "제거되었습니다. .env 에 OWNER_USER_NO=<members.id> 를 명시하세요. "
+            "(설정 전까지 자동화 잡 스킵 + 소유자 전용 API fail-closed)")
     return None
 
 

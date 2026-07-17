@@ -1,544 +1,390 @@
 """
-train.py
+trading/signal.py
 ──────────────────────────────────────────────────────────────────────────────
-XGBoost 모델 학습 스크립트.
+단일 종목 매매 신호 서빙 어댑터 — XGBoost_v2 앙상블을 감싼다.
 
-이 파일은 Flask 서버와 별개로 64비트 Python 에서 단독 실행합니다.
-학습 완료 후 model/ 디렉토리에 파일을 저장하고
-Flask 서버에서 POST /ml/reload 를 호출하면 즉시 반영됩니다.
+■ 배경
+  이 파일에는 초기 커밋(f94673c)부터 학습 스크립트 내용이 들어가 있어, 호출자가
+  기대하는 predict / get_model_status / reload_model 이 정의된 적이 없다. 그 탓에
+  routes/stock_ml.py 의 XGBoost 경로와 trader.run_signal 이 ImportError 로 조용히
+  죽어 있었다(양쪽 다 except 로 삼킨다). 학습 스크립트는 trading/train.py 로 옮기고,
+  이 파일에는 호출자가 기대하는 서빙 API만 둔다.
 
-저장 파일:
-  model/xgboost_model.json   — XGBoost Booster 모델
-  model/scaler.pkl           — StandardScaler
-  model/feature_list.json    — 피처 이름 순서
-  model/label_config.json    — 라벨 정의 및 임계값
-  model/train_report.json    — 학습 결과 리포트
+■ 모델·피처
+  XGBoost_v2/model/ 의 앙상블(xgb_v2_{daily,short,swing} + scaler_v2 + meta_v2_*)을 쓴다.
+  trading/model/ 의 v1 아티팩트는 존재하지 않으며, trading/feature.py(34개 피처)는
+  이 모델(82개 피처)과 교집합이 16개뿐이라 호환되지 않는다. 따라서 피처 빌더도
+  XGBoost_v2/feature_v2.py 를 쓴다. 추론 절차는 daily_recommend._score_one 과 동일하게
+  맞춰, 일별 추천과 단건 조회가 같은 값을 내도록 한다.
 
-실행 방법:
-  python train.py
-  python train.py --tickers 005930.KS 000660.KS 035720.KS
-  python train.py --source yfinance --tickers 005930.KS 000660.KS
-  python train.py --target-days 3 --threshold 0.55
+■ 신호 규약 (trading/trader.py 가 기대하는 형태)
+  predict() → {"signal": "BUY"|"HOLD"|"ERROR", "prob_buy", "prob_sell",
+               "price", "reason", ...}
 
-요구사항 (64비트 Python + venv_train):
-  pip install xgboost==2.1.4 scikit-learn pandas numpy requests
-              beautifulsoup4 python-dotenv yfinance lxml
+  모델 출력은 "N일 내 목표수익 달성 + 낙폭 제한" 확률이다(daily=3일/+2%/-1.5%).
+
+  [SELL 을 내지 않는 이유]
+  이 모델에는 매도 라벨이 없다. P(목표 달성)의 여집합에는 하락뿐 아니라 횡보·소폭
+  상승·목표 미달이 모두 섞이므로 (1 - prob_buy) 를 매도 확률로 쓰면 근거 없이
+  대다수 종목이 SELL 이 된다. 따라서 BUY/HOLD 만 내고, 청산은 trader 의
+  손절·익절(_check_exit_conditions — HOLD 응답 시 호출된다)에 맡긴다.
+  매도 신호가 필요하면 매도 라벨을 별도로 학습해야 한다. prob_sell 은 하위 호환을
+  위해 계산해 싣되 판정에는 쓰지 않는다.
+
+■ 호출자
+  routes/stock_ml.py : predict / get_model_status / reload_model
+  trading/trader.py  : predict  (실주문 송신은 trader 쪽에서 영구 차단되어 있다)
+
+■ 실행 (자가진단)
+  python -m trading.signal      ← 리포지토리 루트에서. `python trading/signal.py` 는
+                                   sys.path 문제로 XGBoost_v2 임포트에 실패한다.
 ──────────────────────────────────────────────────────────────────────────────
 """
+from __future__ import annotations
 
-import os
-import sys
 import json
-import pickle
-import argparse
 import logging
-import warnings
-from datetime import datetime, timedelta
+import os
+import threading
+from datetime import datetime
 from pathlib import Path
-from dotenv import load_dotenv
-
-load_dotenv()   # .env 파일 로드 (BOK_API_KEY, DART_API_KEY 등)
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
-warnings.filterwarnings('ignore')
-logging.basicConfig(
-    level=logging.INFO,
-    format='[%(asctime)s] %(levelname)s %(message)s',
-    datefmt='%H:%M:%S',
-)
 logger = logging.getLogger(__name__)
 
-# ── 경로 설정 ─────────────────────────────────────────────────────────────
-ROOT_DIR  = Path(__file__).parent
-MODEL_DIR = ROOT_DIR / 'model'
-MODEL_DIR.mkdir(exist_ok=True)
-
-# ── 기본 학습 설정 ─────────────────────────────────────────────────────────
-DEFAULT_TICKERS = ["005930.KS"]
-DEFAULT_SOURCE  = "yfinance"
-TARGET_DAYS     = 5
-BUY_THRESHOLD   = 0.03
-SELL_THRESHOLD  = -0.02
-OHLCV_COUNT     = 600
-MIN_ROWS        = 120
+MODEL_DIR = Path(__file__).parent.parent / "XGBoost_v2" / "model"
+REPORT_FILE = MODEL_DIR / "train_report_v2.json"
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# 1. 데이터 수집
-# ═════════════════════════════════════════════════════════════════════════════
+def _env_prob(key: str, default: float) -> float:
+    """
+    0~1 확률 env 파싱. 잘못된 값이면 경고 후 기본값.
 
-def fetch_ohlcv_kiwoom(ticker: str, count: int = OHLCV_COUNT) -> pd.DataFrame | None:
-    """키움 kiwoom_worker.get_ohlcv() 로 일봉 데이터 수집."""
+    import 시점에 ValueError 를 내면 이 모듈의 import 자체가 실패하고, 호출자의
+    광범위 except 가 그것을 삼켜 '조용히 죽는' 원래 상태로 돌아간다.
+    """
+    raw = os.getenv(key)
+    if raw is None or raw.strip() == "":
+        return default
     try:
-        sys.path.insert(0, str(ROOT_DIR))
-        from kiwoom_client import kiwoom
-        if kiwoom.get_login_state() != 1:
-            logger.warning("[data] 키움 로그인 안됨 → yfinance 폴백")
-            return None
-        df = kiwoom.get_ohlcv(ticker, count=count)
-        if df is not None and not df.empty and len(df) >= MIN_ROWS:
-            logger.info(f"[data] 키움 {ticker}: {len(df)}행")
-            return df
+        value = float(raw)
+    except ValueError:
+        logger.warning(f"[signal] {key}='{raw}' 를 실수로 읽을 수 없음 → 기본값 {default}")
+        return default
+    if not 0.0 < value < 1.0:
+        logger.warning(f"[signal] {key}={value} 가 (0, 1) 범위 밖 → 기본값 {default}")
+        return default
+    return value
+
+
+# 매수 임계값 — trading/trader.py RiskConfig 와 같은 env 키·기본값을 쓴다.
+# (trader 를 import 하면 순환 참조가 되므로 값만 맞춘다.)
+MIN_BUY_PROB: float = _env_prob("MIN_BUY_PROB", 0.60)
+
+# build_technical 이 지표를 채우려면 필요한 최소 행수 (daily_recommend._score_one 과 동일)
+MIN_OHLCV_ROWS: int = 80
+
+PRIMARY_LABEL: str = "daily"
+LABELS: tuple[str, ...] = ("daily", "short", "swing")
+
+_OHLCV_REQUIRED: frozenset[str] = frozenset({"open", "high", "low", "close", "volume"})
+
+# 앙상블 Booster 는 daily_recommend 의 ThreadPoolExecutor(8) 와 FastAPI 스레드풀이
+# 공유한다. xgboost/lightgbm Booster.predict 의 스레드 안전성은 보장되지 않으므로
+# (버전별 동작 — 확인 필요) 이 모듈의 추론은 직렬화한다.
+_predict_lock = threading.Lock()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 내부 헬퍼
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _error(code: str, name: str, reason: str) -> dict[str, Any]:
+    """호출자(trader.run_signal / stock_ml._predict_xgb)가 판정하는 ERROR 형태."""
+    logger.warning(f"[signal] {name}({code}) → ERROR: {reason}")
+    return {
+        "signal": "ERROR",
+        "reason": reason,
+        "ticker": code,
+        "ticker_name": name,
+        "price": 0.0,
+        "prob_buy": 0.0,
+        "prob_sell": 0.0,
+    }
+
+
+def _normalize_code(ticker: str) -> str:
+    """'005930.KS' / '005930.KQ' / '005930' → '005930'."""
+    t = (ticker or "").strip().upper()
+    for suffix in (".KS", ".KQ"):
+        if t.endswith(suffix):
+            return t[: -len(suffix)]
+    return t
+
+
+def _lookup_market(code: str) -> str:
+    """
+    kr_stocks 에서 시장 구분 조회. 실패 시 KOSPI 가정.
+
+    DB 장애 시 KOSDAQ 종목을 KOSPI 로 평가하게 되어 build_static_features 가 다른 값을
+    내고, '일별 추천과 단건 조회가 같은 값' 이라는 이 모듈의 전제가 깨진다. 그래서
+    debug 가 아니라 warning 으로 남긴다.
+    """
+    try:
+        from database.db_connection import get_db_connection
+
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT market FROM kr_stocks WHERE code = %s LIMIT 1", (code,))
+            row = cur.fetchone()
+        finally:
+            conn.close()
+        if row and row.get("market"):
+            return str(row["market"])
+        logger.warning(f"[signal] {code} 가 kr_stocks 에 없음 → KOSPI 가정 (피처가 달라질 수 있음)")
     except Exception as e:
-        logger.warning(f"[data] 키움 실패 ({ticker}): {e}")
-    return None
+        logger.warning(f"[signal] {code} 시장 조회 실패 → KOSPI 가정 (피처가 달라질 수 있음): {e}")
+    return "KOSPI"
 
 
-def fetch_ohlcv_yfinance(ticker: str, count: int = OHLCV_COUNT) -> pd.DataFrame | None:
-    """yfinance 로 일봉 데이터 수집."""
+def _normalize_ohlcv(df: pd.DataFrame | None) -> tuple[pd.DataFrame | None, str]:
+    """
+    호출자가 넘긴 OHLCV를 feature_v2.build_technical 이 받는 형태로 맞춘다.
+
+    Returns:
+        (정규화된 df, "") 또는 (None, 실패 사유). 사유를 그대로 호출자에게 전달해야
+        "OHLCV 부족 — 수집 필요" 같은 틀린 처방이 나가지 않는다.
+    """
+    if df is None or len(df) == 0:
+        return None, "OHLCV 가 비어 있음"
+
+    out = df.copy()
+    # yfinance MultiIndex 컬럼이면 str(c) 가 "('close', '005930.ks')" 가 되어 검사에서
+    # 탈락한다. 첫 레벨만 취해 평탄화한다.
+    if isinstance(out.columns, pd.MultiIndex):
+        out.columns = [str(c[0]).lower() for c in out.columns]
+    else:
+        out.columns = [str(c).lower() for c in out.columns]
+
+    if not isinstance(out.index, pd.DatetimeIndex):
+        for cand in ("date", "일자", "datetime"):
+            if cand in out.columns:
+                out = out.set_index(pd.to_datetime(out[cand], errors="coerce"))
+                break
+        else:
+            # to_datetime(errors="coerce") 는 정수 인덱스를 NaT 로 만들지 않고 epoch
+            # 나노초로 해석해 1970-01-01 대로 바꾼다. 그러면 market_df reindex 가
+            # 전부 NaN → nan_to_num 이 0 으로 덮어 시장 상대강도 피처가 통째로 0 인 채
+            # 그럴듯한 신호가 나간다. 숫자 인덱스는 명시적으로 거부한다.
+            if pd.api.types.is_numeric_dtype(out.index):
+                return None, "OHLCV 인덱스가 날짜가 아님 (숫자 인덱스 — date 컬럼 필요)"
+            out.index = pd.to_datetime(out.index, errors="coerce")
+        out = out[out.index.notna()]
+        if len(out) == 0:
+            return None, "OHLCV 인덱스를 날짜로 변환한 결과가 비어 있음"
+
+    missing = sorted(_OHLCV_REQUIRED - set(out.columns))
+    if missing:
+        return None, f"OHLCV 컬럼 누락: {missing}"
+    if out.columns.duplicated().any():
+        dups = sorted(out.columns[out.columns.duplicated()].unique())
+        return None, f"OHLCV 컬럼 중복: {dups}"
+    return out.sort_index(), ""
+
+
+def _load_report() -> dict[str, Any]:
+    """train_report_v2.json — 학습 시점·설정 표시용(없어도 예측에는 지장 없음)."""
+    if not REPORT_FILE.exists():
+        return {}
     try:
-        import yfinance as yf
-        end   = datetime.now()
-        start = end - timedelta(days=int(count * 1.5))
-        raw   = yf.Ticker(ticker).history(start=start, end=end)
-        if raw is None or raw.empty:
-            return None
-        df         = raw[["Open", "High", "Low", "Close", "Volume"]].copy()
-        df.columns = ["open", "high", "low", "close", "volume"]
-        df.index   = pd.to_datetime(df.index).tz_localize(None)
-        df         = df.sort_index()
-        logger.info(f"[data] yfinance {ticker}: {len(df)}행")
-        return df
+        return json.loads(REPORT_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        logger.debug(f"[signal] 학습 리포트 읽기 실패: {e}")
+        return {}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 공개 API
+# ─────────────────────────────────────────────────────────────────────────────
+
+def predict(ticker: str, ticker_name: str = "",
+            ohlcv_df: pd.DataFrame | None = None) -> dict[str, Any]:
+    """
+    단일 종목 매매 신호.
+
+    Args:
+        ticker      : 종목코드 ('005930' 또는 '005930.KS')
+        ticker_name : 종목명 (뉴스 감성 피처에 쓰임. 없으면 코드로 대체)
+        ohlcv_df    : OHLCV DataFrame. None 이면 XGBoost_v2 로컬 parquet 에서 로드.
+
+    Returns:
+        {"signal": "BUY"|"SELL"|"HOLD"|"ERROR", "prob_buy", "prob_sell",
+         "price", "reason", "prob_up", "prob_down", "confidence", ...}
+    """
+    code = _normalize_code(ticker)
+    name = ticker_name or code
+    if not code:
+        return _error(code, name, "종목코드가 비어 있음")
+
+    try:
+        from XGBoost_v2.collect_v2 import load_ohlcv
+        from XGBoost_v2.daily_recommend import _load_ensemble, _predict_ensemble
+        from XGBoost_v2.feature_v2 import (build_full_matrix, build_static_features,
+                                           build_technical, get_macro, get_market_ohlcv)
     except Exception as e:
-        logger.warning(f"[data] yfinance 실패 ({ticker}): {e}")
-    return None
+        return _error(code, name, f"XGBoost_v2 모듈 임포트 실패: {e}")
 
+    ensemble = _load_ensemble()
+    if ensemble is None:
+        # 경로는 로그로만 — /ml/status 는 무인증이라 응답에 절대경로를 싣지 않는다.
+        logger.error(f"[signal] 앙상블 로드 실패 — 확인: {MODEL_DIR}")
+        return _error(code, name, "앙상블 모델을 로드하지 못했습니다 (모델 파일 확인 필요)")
 
-def fetch_ohlcv(ticker: str, source: str = DEFAULT_SOURCE,
-                count: int = OHLCV_COUNT) -> pd.DataFrame | None:
-    """OHLCV 수집 진입점. 키움 우선 → yfinance 폴백."""
-    if source == "kiwoom":
-        df = fetch_ohlcv_kiwoom(ticker, count)
-        if df is not None and len(df) >= MIN_ROWS:
-            return df
-    yfcode = ticker if "." in ticker else ticker + ".KS"
-    return fetch_ohlcv_yfinance(yfcode, count)
+    if ohlcv_df is not None:
+        ohlcv, why = _normalize_ohlcv(ohlcv_df)
+        if ohlcv is None:
+            return _error(code, name, why)
+    else:
+        ohlcv = load_ohlcv(code)
+        if ohlcv is None:
+            return _error(code, name,
+                          "로컬 OHLCV 없음 — 수집 필요 (python -m XGBoost_v2.collect_v2)")
 
+    if len(ohlcv) < MIN_OHLCV_ROWS:
+        return _error(code, name,
+                      f"OHLCV 행 부족 ({len(ohlcv)}행 < {MIN_OHLCV_ROWS}행)")
 
-# ═════════════════════════════════════════════════════════════════════════════
-# 2. 피처 빌드 (API 호출 없이 로컬 계산만 사용 — 속도 최적화)
-# ═════════════════════════════════════════════════════════════════════════════
+    # 공유 Booster 에 대한 동시 predict 를 직렬화한다.
+    with _predict_lock:
+        try:
+            features = ensemble["features"]
+            tech = build_technical(ohlcv, get_market_ohlcv())
+            static = build_static_features(code, name, _lookup_market(code))
+            X_df = build_full_matrix(tech, static, get_macro())
 
-def build_features_from_df(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    학습용 피처 빌드.
+            # 학습 당시 피처가 빠졌으면 0으로 채워 열 순서를 모델과 맞춘다.
+            for col in features:
+                if col not in X_df.columns:
+                    X_df[col] = 0.0
 
-    ⚡ 속도 최적화: API 호출(BOK/DART/KIS/뉴스) 없이
-    로컬 numpy/pandas 계산만 사용합니다.
+            X_latest = X_df[features].iloc[-1:].values.astype(np.float32)
+            X_latest = np.nan_to_num(X_latest, nan=0.0, posinf=0.0, neginf=0.0)
+            X_scaled = ensemble["scaler"].transform(X_latest)
 
-    수급/거시/공시/뉴스 피처는 실시간 예측(signal.py)에서 추가되며,
-    학습 시에는 기술적 지표만으로 베이스 모델을 훈련합니다.
+            confs: dict[str, float] = {}
+            for label in LABELS:
+                if label in ensemble["labels"]:
+                    confs[label] = float(_predict_ensemble(ensemble, X_scaled, label)[0])
 
-    학습 → model/ 저장 → Flask signal.py 에서 실시간 피처 추가 반영.
-    """
-    return _build_numpy_features(df)
+            prob_buy = confs.get(PRIMARY_LABEL)
+            if prob_buy is None:
+                return _error(code, name, f"'{PRIMARY_LABEL}' 라벨 모델 없음 — 재학습 필요")
 
+            # int() 는 종가가 NaN 이면 ValueError 를 낸다. try 안에 둬야 규약대로
+            # _error dict 가 나가고, 상위 except 에 삼켜지지 않는다.
+            price = int(ohlcv["close"].iloc[-1])
+        except Exception as e:
+            logger.error(f"[signal] {name}({code}) 예측 실패: {e}", exc_info=True)
+            return _error(code, name, f"예측 실패: {e}")
 
-def _build_numpy_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    pandas/numpy 기반 기술적 지표 피처.
-    외부 API 호출 없음 — 학습 속도 최적화.
-    """
-    c, h, l, v = df["close"], df["high"], df["low"], df["volume"]
-    feats = {}
+    # 매도 라벨이 없으므로 BUY/HOLD 만 낸다(모듈 docstring 의 [SELL 을 내지 않는 이유]).
+    # 청산은 trader 가 HOLD 응답 시 호출하는 _check_exit_conditions(손절·익절)가 맡는다.
+    if prob_buy >= MIN_BUY_PROB:
+        signal = "BUY"
+        reason = f"매수 확률 {prob_buy:.1%} ≥ 임계값 {MIN_BUY_PROB:.0%}"
+    else:
+        signal = "HOLD"
+        reason = f"매수 확률 {prob_buy:.1%} — 임계값 {MIN_BUY_PROB:.0%} 미달, 관망"
 
-    # ── 수익률 ───────────────────────────────────────────────────────────
-    for d in [1, 5, 20]:
-        feats[f"ret_{d}d"] = c.pct_change(d)
-
-    # ── 이동평균 이격도 ──────────────────────────────────────────────────
-    for w in [5, 10, 20, 60]:
-        ma = c.rolling(w).mean()
-        feats[f"ma{w}_gap"] = c / (ma + 1e-9) - 1
-
-    # ── RSI(14) ──────────────────────────────────────────────────────────
-    delta    = c.diff()
-    gain     = delta.clip(lower=0).ewm(com=13, min_periods=14).mean()
-    loss     = (-delta).clip(lower=0).ewm(com=13, min_periods=14).mean()
-    feats["rsi_14"] = 100 - 100 / (1 + gain / (loss + 1e-9))
-
-    # ── MACD(12, 26, 9) ──────────────────────────────────────────────────
-    ema12    = c.ewm(span=12, adjust=False).mean()
-    ema26    = c.ewm(span=26, adjust=False).mean()
-    macd     = ema12 - ema26
-    macd_sig = macd.ewm(span=9, adjust=False).mean()
-    feats["macd"]      = macd
-    feats["macd_hist"] = macd - macd_sig
-
-    # ── 볼린저 %B ────────────────────────────────────────────────────────
-    ma20  = c.rolling(20).mean()
-    std20 = c.rolling(20).std()
-    feats["bb_pct"] = (c - (ma20 - 2 * std20)) / (4 * std20 + 1e-9)
-
-    # ── 거래량 비율 ───────────────────────────────────────────────────────
-    feats["vol_ratio_5"]  = v / (v.rolling(5).mean()  + 1e-9)
-    feats["vol_ratio_20"] = v / (v.rolling(20).mean() + 1e-9)
-
-    # ── ATR 비율 ─────────────────────────────────────────────────────────
-    prev_c = c.shift(1)
-    tr     = pd.concat([h - l,
-                        (h - prev_c).abs(),
-                        (l - prev_c).abs()], axis=1).max(axis=1)
-    feats["atr_ratio"] = tr.rolling(14).mean() / (c + 1e-9)
-
-    # ── OBV z-score ──────────────────────────────────────────────────────
-    obv = (np.sign(c.diff().fillna(0)) * v).cumsum()
-    feats["obv_norm"] = (obv - obv.rolling(20).mean()) / (obv.rolling(20).std() + 1e-9)
-
-    # ── 20일 채널 위치 ────────────────────────────────────────────────────
-    hi20  = h.rolling(20).max()
-    lo20  = l.rolling(20).min()
-    feats["chan_pos"] = (c - lo20) / (hi20 - lo20 + 1e-9)
-
-    feat_df = pd.DataFrame(feats, index=df.index)
-    feat_df = feat_df.replace([np.inf, -np.inf], 0).fillna(0)
-    return feat_df
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# 3. 라벨 생성
-# ═════════════════════════════════════════════════════════════════════════════
-
-def make_labels(close: pd.Series, target_days: int,
-                buy_thr: float, sell_thr: float) -> pd.Series:
-    """
-    3-class 라벨 생성.
-      2 = BUY  (n일 후 수익률 > buy_thr)
-      0 = SELL (n일 후 수익률 < sell_thr)
-      1 = HOLD (그 외)
-    마지막 target_days 행은 NaN → 학습에서 제외.
-    """
-    future_ret = close.shift(-target_days) / close - 1
-    labels     = pd.Series(1, index=close.index, name="label")
-    labels[future_ret >  buy_thr]  = 2
-    labels[future_ret <  sell_thr] = 0
-    labels[future_ret.isna()]      = np.nan
-    return labels
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# 4. Walk-forward 교차검증
-# ═════════════════════════════════════════════════════════════════════════════
-
-def walk_forward_cv(X: np.ndarray, y: np.ndarray,
-                    n_splits: int = 5) -> dict:
-    """
-    시계열 Walk-forward 교차검증.
-    train = [:val_start], val = [val_start:val_end] 구조로
-    미래 데이터 누수를 완전히 차단합니다.
-    """
-    try:
-        import xgboost as xgb
-    except ImportError:
-        logger.error("[cv] xgboost 미설치 — pip install xgboost==2.1.4")
-        return {'accuracy': 0.0, 'std': 0.0, 'fold_scores': []}
-
-    fold_size   = len(X) // n_splits
-    fold_scores = []
-
-    for fold in range(n_splits):
-        val_start = fold * fold_size
-        val_end   = val_start + fold_size
-        train_end = val_start
-
-        if train_end < 60:
-            continue
-
-        X_tr, y_tr   = X[:train_end],        y[:train_end]
-        X_val, y_val = X[val_start:val_end],  y[val_start:val_end]
-
-        if len(X_tr) < 30 or len(X_val) < 10:
-            continue
-        if len(np.unique(y_tr)) < 2:
-            continue
-
-        dtrain = xgb.DMatrix(X_tr, label=y_tr)
-        dval   = xgb.DMatrix(X_val)
-
-        params = {
-            "objective":        "multi:softprob",
-            "num_class":        3,
-            "max_depth":        4,
-            "eta":              0.05,
-            "subsample":        0.8,
-            "colsample_bytree": 0.8,
-            "eval_metric":      "mlogloss",
-            "verbosity":        0,
-            "seed":             42,
-        }
-        booster = xgb.train(params, dtrain, num_boost_round=100, verbose_eval=False)
-
-        # predict → (n, 3) 확률 → argmax → 클래스
-        proba = booster.predict(dval).reshape(-1, 3)
-        preds = proba.argmax(axis=1)
-        acc   = float((preds == y_val).mean())
-        fold_scores.append(acc)
-        logger.info(f"  Fold {fold + 1}/{n_splits}: acc={acc:.3f} "
-                    f"(train={len(X_tr)}, val={len(X_val)})")
-
-    if not fold_scores:
-        return {'accuracy': 0.0, 'std': 0.0, 'fold_scores': []}
+    logger.info(f"[signal] {name}({code}) → {signal} | buy={prob_buy:.1%} | {price:,}원")
 
     return {
-        'accuracy':    round(float(np.mean(fold_scores)), 4),
-        'std':         round(float(np.std(fold_scores)),  4),
-        'fold_scores': [round(s, 4) for s in fold_scores],
+        "signal": signal,
+        "reason": reason,
+        "price": price,
+        "prob_buy": round(prob_buy, 4),
+        # 하위 호환용 여집합. 매도 판정 근거로 쓰지 말 것 — 횡보·목표 미달이 섞여 있다.
+        "prob_sell": round(1.0 - prob_buy, 4),
+        # routes/stock_ml.py 의 LR 폴백과 키 이름은 같다. 단 'signal' 값 어휘는 다르다
+        # (여기 BUY/HOLD vs LR '상승'/'하락') — 프론트는 BUY/SELL/HOLD 만 해석한다.
+        "prob_up": round(prob_buy * 100, 1),
+        "prob_down": round((1.0 - prob_buy) * 100, 1),
+        "confidence": round(prob_buy, 4),
+        "model_type": f"XGBoost_v2 앙상블({PRIMARY_LABEL})",
+        "conf_daily": round(confs.get("daily", 0.0), 4),
+        "conf_short": round(confs.get("short", 0.0), 4),
+        "conf_swing": round(confs.get("swing", 0.0), 4),
+        "ticker": code,
+        "ticker_name": name,
+        "predicted_at": datetime.now().isoformat(timespec="seconds"),
     }
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# 5. 최종 학습 & 저장
-# ═════════════════════════════════════════════════════════════════════════════
-
-def train_and_save(
-    tickers:     list[str],
-    source:      str   = DEFAULT_SOURCE,
-    target_days: int   = TARGET_DAYS,
-    buy_thr:     float = BUY_THRESHOLD,
-    sell_thr:    float = SELL_THRESHOLD,
-    pred_thr:    float = 0.60,
-    n_splits:    int   = 5,
-):
+def get_model_status() -> dict[str, Any]:
     """
-    다중 종목 OHLCV 를 합쳐 XGBoost Booster 를 학습하고 model/ 에 저장합니다.
+    앙상블 로드 상태. routes/stock_ml.py 의 GET /ml/status 응답에 병합된다.
 
-    저장 형식: xgb.Booster.save_model() → JSON
-    로드 형식: signal.py 에서 xgb.Booster().load_model() 로 로드
+    반환 dict 가 마지막에 병합되므로 'xgb_available' 키로 실제 로드 여부를 덮어쓴다
+    (호출 성공만으로 available=True 가 되던 것을 실제 상태로 정정).
+
+    GET /ml/status 는 무인증 엔드포인트다 — 절대경로·예외 원문을 싣지 않는다.
+    진단 정보는 logger 로만 남긴다.
     """
     try:
-        import xgboost as xgb
-        from sklearn.preprocessing import StandardScaler
-    except ImportError:
-        logger.error("xgboost 또는 scikit-learn 미설치.\n"
-                     "  pip install xgboost==2.1.4 scikit-learn")
-        sys.exit(1)
+        from XGBoost_v2.daily_recommend import _load_ensemble
 
-    # ── 1. 데이터 수집 & 피처 빌드 ─────────────────────────────────────
-    all_X, all_y = [], []
-    used_tickers = []
-    feat_df      = None
+        ensemble = _load_ensemble()
+    except Exception as e:
+        logger.warning(f"[signal] 모델 상태 조회 실패: {e}", exc_info=True)
+        return {"xgb_available": False}
 
-    for ticker in tickers:
-        logger.info(f"[train] {ticker} 데이터 수집 중...")
-        df = fetch_ohlcv(ticker, source=source)
-
-        if df is None or len(df) < MIN_ROWS:
-            n = len(df) if df is not None else 0
-            logger.warning(f"[train] {ticker} 데이터 부족 ({n}행) — 스킵")
-            continue
-
-        feat_df = build_features_from_df(df)
-        labels  = make_labels(df["close"], target_days, buy_thr, sell_thr)
-
-        # 공통 인덱스 + 워밍업(앞 60행) 제거
-        common = feat_df.index.intersection(labels.dropna().index)[60:]
-
-        if len(common) < 60:
-            logger.warning(f"[train] {ticker} 유효 샘플 부족 — 스킵")
-            continue
-
-        X_t = feat_df.loc[common].values.astype(np.float32)
-        y_t = labels.loc[common].values.astype(int)
-
-        all_X.append(X_t)
-        all_y.append(y_t)
-        used_tickers.append(ticker)
-        logger.info(f"[train] {ticker}: 피처 {X_t.shape[1]}개, 샘플 {len(X_t)}개")
-
-    if not all_X:
-        logger.error("[train] 유효 데이터 없음. 종료.")
-        sys.exit(1)
-
-    X             = np.vstack(all_X)
-    y             = np.concatenate(all_y)
-    feature_names = feat_df.columns.tolist()
-
-    logger.info(f"[train] 전체 샘플: {len(X):,}개 | 피처: {X.shape[1]}개")
-    logger.info(f"[train] 라벨 분포: SELL={int((y==0).sum())} "
-                f"HOLD={int((y==1).sum())} BUY={int((y==2).sum())}")
-
-    # ── 2. 정규화 ────────────────────────────────────────────────────────
-    scaler   = StandardScaler()
-    X_scaled = scaler.fit_transform(X).astype(np.float32)
-
-    # ── 3. Walk-forward 교차검증 ─────────────────────────────────────────
-    logger.info(f"[train] Walk-forward {n_splits}-Fold 교차검증 시작...")
-    cv_result = walk_forward_cv(X_scaled, y, n_splits=n_splits)
-    logger.info(
-        f"[train] CV 결과: "
-        f"acc={cv_result['accuracy']:.3f}±{cv_result['std']:.3f} | "
-        f"folds={cv_result['fold_scores']}"
-    )
-
-    # ── 4. 전체 데이터로 최종 학습 (xgb.Booster 직접 사용) ─────────────
-    # XGBClassifier.save_model() 은 버전에 따라 _estimator_type 오류 발생.
-    # xgb.Booster 를 직접 사용하면 버전 무관하게 안정적으로 저장/로드 가능.
-    logger.info("[train] 최종 모델 학습 중...")
-
-    dtrain = xgb.DMatrix(X_scaled, label=y)
-    params = {
-        "objective":        "multi:softprob",
-        "num_class":        3,
-        "max_depth":        5,
-        "eta":              0.03,
-        "subsample":        0.8,
-        "colsample_bytree": 0.8,
-        "min_child_weight": 5,
-        "gamma":            0.1,
-        "eval_metric":      "mlogloss",
-        "verbosity":        0,
-        "seed":             42,
+    report = _load_report()
+    status: dict[str, Any] = {
+        "xgb_available": ensemble is not None,
+        "xgb_model_dir_exists": MODEL_DIR.exists(),
+        "xgb_trained_at": report.get("trained_at"),
+        "xgb_use_pit": report.get("use_pit"),
+        "xgb_n_features": report.get("n_features"),
+        "xgb_buy_threshold": MIN_BUY_PROB,
+        "xgb_sell_supported": False,  # 매도 라벨 미학습 — docstring 참고
     }
-    booster = xgb.train(params, dtrain, num_boost_round=300, verbose_eval=False)
-
-    # ── 5. 피처 중요도 ──────────────────────────────────────────────────
-    scores      = booster.get_fscore()   # {f0: score, f1: score, ...}
-    total_score = sum(scores.values()) or 1
-    importances = [scores.get(f"f{i}", 0) / total_score
-                   for i in range(len(feature_names))]
-
-    top10_idx    = np.argsort(importances)[-10:][::-1]
-    top_features = [
-        {"feature": feature_names[i], "importance": round(float(importances[i]), 4)}
-        for i in top10_idx
-    ]
-    logger.info("[train] 피처 중요도 TOP 10:")
-    for item in top_features:
-        logger.info(f"  {item['feature']:30s}  {item['importance']:.4f}")
-
-    # ── 6. model/ 저장 ──────────────────────────────────────────────────
-    model_path  = MODEL_DIR / 'xgboost_model.json'
-    scaler_path = MODEL_DIR / 'scaler.pkl'
-    feat_path   = MODEL_DIR / 'feature_list.json'
-    label_path  = MODEL_DIR / 'label_config.json'
-    report_path = MODEL_DIR / 'train_report.json'
-
-    # XGBoost Booster 저장 (버전 호환 안정적)
-    booster.save_model(str(model_path))
-    logger.info(f"[save] 모델 저장: {model_path}")
-
-    # 스케일러
-    with open(scaler_path, 'wb') as f:
-        pickle.dump(scaler, f)
-    logger.info(f"[save] 스케일러 저장: {scaler_path}")
-
-    # 피처 목록 (signal.py 가 이 순서로 피처를 읽음)
-    with open(feat_path, 'w', encoding='utf-8') as f:
-        json.dump(feature_names, f, ensure_ascii=False, indent=2)
-    logger.info(f"[save] 피처 목록 저장: {feat_path} ({len(feature_names)}개)")
-
-    # 라벨/임계값 설정
-    label_config = {
-        "label_map":   {"0": "SELL", "1": "HOLD", "2": "BUY"},
-        "target_days": target_days,
-        "buy_thr":     buy_thr,
-        "sell_thr":    sell_thr,
-        "thresholds": {
-            "buy_threshold":  pred_thr,
-            "sell_threshold": pred_thr,
-            "min_volume":     100000,
-        },
-    }
-    with open(label_path, 'w', encoding='utf-8') as f:
-        json.dump(label_config, f, ensure_ascii=False, indent=2)
-    logger.info(f"[save] 라벨 설정 저장: {label_path}")
-
-    # 학습 리포트
-    report = {
-        "trained_at":     datetime.now().isoformat(),
-        "tickers":        used_tickers,
-        "source":         source,
-        "total_samples":  int(len(X)),
-        "n_features":     int(X.shape[1]),
-        "target_days":    target_days,
-        "buy_thr":        buy_thr,
-        "sell_thr":       sell_thr,
-        "pred_threshold": pred_thr,
-        "label_dist": {
-            "SELL": round(int((y == 0).sum()) / len(y), 4),
-            "HOLD": round(int((y == 1).sum()) / len(y), 4),
-            "BUY":  round(int((y == 2).sum()) / len(y), 4),
-        },
-        "cv_accuracy":  cv_result['accuracy'],
-        "cv_std":       cv_result['std'],
-        "fold_scores":  cv_result['fold_scores'],
-        "top_features": top_features,
-    }
-    with open(report_path, 'w', encoding='utf-8') as f:
-        json.dump(report, f, ensure_ascii=False, indent=2)
-    logger.info(f"[save] 학습 리포트 저장: {report_path}")
-
-    # ── 7. 최종 요약 ────────────────────────────────────────────────────
-    logger.info("=" * 60)
-    logger.info("■ 학습 완료")
-    logger.info(f"  사용 종목  : {used_tickers}")
-    logger.info(f"  전체 샘플  : {len(X):,}개")
-    logger.info(f"  피처 수    : {X.shape[1]}개")
-    logger.info(f"  CV 정확도  : {cv_result['accuracy']:.3f}±{cv_result['std']:.3f}")
-    logger.info(f"  예측 임계값: {pred_thr}")
-    logger.info(f"  저장 경로  : {MODEL_DIR}")
-    logger.info("=" * 60)
-    logger.info("Flask 서버에서 POST /ml/reload 를 호출하면 즉시 반영됩니다.")
-
-    return report
+    if ensemble is not None:
+        status["xgb_labels"] = sorted(ensemble["labels"].keys())
+        status["xgb_feature_count"] = len(ensemble["features"])
+        booster = MODEL_DIR / f"xgb_v2_{PRIMARY_LABEL}.json"
+        if booster.exists():
+            status["xgb_model_mtime"] = datetime.fromtimestamp(
+                booster.stat().st_mtime
+            ).isoformat(timespec="seconds")
+    return status
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# 6. CLI 진입점
-# ═════════════════════════════════════════════════════════════════════════════
+def reload_model() -> bool:
+    """모델 파일 교체(재학습·증분학습) 후 캐시를 비우고 다시 로드. 성공 여부 반환."""
+    try:
+        from XGBoost_v2.daily_recommend import _load_ensemble, reload_ensemble
 
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="XGBoost 주가 방향성 예측 모델 학습",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-예시:
-  python train.py
-  python train.py --tickers 005930.KS 000660.KS 035720.KS
-  python train.py --source yfinance --tickers 005930.KS 000660.KS
-  python train.py --target-days 3 --buy-thr 0.02 --sell-thr -0.015
-  python train.py --threshold 0.65 --splits 7
-        """,
-    )
-    parser.add_argument('--tickers', nargs='+', default=DEFAULT_TICKERS,
-                        help='학습할 종목코드 리스트 (기본: 005930.KS)')
-    parser.add_argument('--source', choices=['kiwoom', 'yfinance'],
-                        default=DEFAULT_SOURCE,
-                        help='데이터 소스 (기본: yfinance)')
-    parser.add_argument('--target-days', type=int, default=TARGET_DAYS,
-                        help=f'라벨 기준 미래 일수 (기본: {TARGET_DAYS})')
-    parser.add_argument('--buy-thr', type=float, default=BUY_THRESHOLD,
-                        help=f'매수 라벨 기준 수익률 (기본: {BUY_THRESHOLD})')
-    parser.add_argument('--sell-thr', type=float, default=SELL_THRESHOLD,
-                        help=f'매도 라벨 기준 수익률 (기본: {SELL_THRESHOLD})')
-    parser.add_argument('--threshold', type=float, default=0.60,
-                        help='예측 확률 임계값 (기본: 0.60)')
-    parser.add_argument('--splits', type=int, default=5,
-                        help='Walk-forward fold 수 (기본: 5)')
-    return parser.parse_args()
+        reload_ensemble()
+        ok = _load_ensemble() is not None
+        logger.info(f"[signal] 모델 재로드 {'성공' if ok else '실패'}")
+        return ok
+    except Exception as e:
+        logger.error(f"[signal] 모델 재로드 실패: {e}", exc_info=True)
+        return False
 
 
-if __name__ == '__main__':
-    args = parse_args()
-
-    logger.info("=" * 60)
-    logger.info("■ XGBoost 학습 시작")
-    logger.info(f"  종목      : {args.tickers}")
-    logger.info(f"  데이터    : {args.source}")
-    logger.info(f"  미래 일수 : {args.target_days}일")
-    logger.info(f"  매수 기준 : +{args.buy_thr * 100:.1f}%")
-    logger.info(f"  매도 기준 : {args.sell_thr * 100:.1f}%")
-    logger.info(f"  임계값    : {args.threshold}")
-    logger.info("=" * 60)
-
-    train_and_save(
-        tickers=args.tickers,
-        source=args.source,
-        target_days=args.target_days,
-        buy_thr=args.buy_thr,
-        sell_thr=args.sell_thr,
-        pred_thr=args.threshold,
-        n_splits=args.splits,
-    )
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO,
+                        format="[%(asctime)s] %(levelname)s %(message)s",
+                        datefmt="%H:%M:%S")
+    print("=== get_model_status() ===")
+    for k, v in get_model_status().items():
+        print(f"  {k:<22}{v}")
+    print()
+    print("=== predict('005930', '삼성전자') ===")
+    for k, v in predict("005930", "삼성전자").items():
+        print(f"  {k:<22}{v}")
