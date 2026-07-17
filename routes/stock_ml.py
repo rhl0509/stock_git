@@ -44,6 +44,8 @@ routes/stock_ml.py
 
 import logging
 import os
+from datetime import datetime
+from functools import lru_cache
 from fastapi import APIRouter, Request, Depends, Body
 from fastapi.responses import JSONResponse
 from routes.utils import api_require_login, require_login_smart
@@ -433,6 +435,89 @@ def _predict_xgb(ticker: str, ticker_name: str,
         return None
 
 
+_DERIV_CACHE_FILE = (Path(__file__).parent.parent / 'XGBoost_v2' / 'data'
+                     / 'cache' / 'derivative_codes.json')
+_DERIV_TTL_DAYS = 7          # 상장·폐지가 잦지 않아 주 단위면 충분
+
+
+def _fetch_derivative_codes() -> set:
+    """pykrx 에서 ETF/ETN/ELW 코드를 받아온다. 실패하면 빈 집합."""
+    codes: set = set()
+    try:
+        from pykrx import stock as pystock
+    except ImportError:
+        logger.warning('[stock_ml] pykrx 없음 — ETF/ETN 목록 조회 불가')
+        return codes
+    for fn in ('get_etf_ticker_list', 'get_etn_ticker_list', 'get_elw_ticker_list'):
+        try:
+            codes |= set(getattr(pystock, fn)())
+        except Exception as e:
+            # KRX 가 간헐적으로 비-JSON 을 반환하면 pykrx 내부에서 IndexError 가 난다.
+            logger.warning(f'[stock_ml] {fn} 실패: {type(e).__name__}: {e}')
+    return codes
+
+
+@lru_cache(maxsize=2)
+def _derivative_codes(day: str) -> frozenset:
+    """
+    ETF/ETN/ELW 코드 집합. day 는 날짜별 in-process 캐시 무효화 키(값은 안 씀).
+
+    ■ 왜 파일 캐시인가
+      요청 시점에 KRX 를 직접 조회하면 KRX 가 흔들릴 때마다(실측: 비-JSON 응답 →
+      pykrx 내부 IndexError) 판정이 빈 집합이 되어, **같은 ETF 가 어떤 날은 차단되고
+      어떤 날은 예측을 받는 비결정적 동작**이 된다. 한 번 받아 파일에 두고 재사용한다.
+
+    ■ 실패 시 정책
+      신선한 파일 → 사용. 조회 성공 → 갱신 후 사용. 조회 실패 → **낡은 파일이라도 사용**.
+      아무것도 없으면 빈 집합 = fail-open(예측을 막지 않는다). KRX 장애가 곧 전 종목
+      예측 중단이 되면 안 되고, 뒤는 실력 게이트가 받친다.
+    """
+    cached, stale = None, False
+    try:
+        if _DERIV_CACHE_FILE.exists():
+            payload = json.loads(_DERIV_CACHE_FILE.read_text(encoding='utf-8'))
+            cached = set(payload.get('codes', []))
+            fetched = datetime.fromisoformat(payload['fetched_at'])
+            stale = (datetime.now() - fetched).days >= _DERIV_TTL_DAYS
+    except (OSError, ValueError, KeyError) as e:
+        logger.warning(f'[stock_ml] 파생상품 캐시 읽기 실패: {e}')
+
+    if cached and not stale:
+        return frozenset(cached)
+
+    fresh = _fetch_derivative_codes()
+    if fresh:
+        try:
+            _DERIV_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            _DERIV_CACHE_FILE.write_text(json.dumps(
+                {'fetched_at': datetime.now().isoformat(), 'codes': sorted(fresh)},
+                ensure_ascii=False), encoding='utf-8')
+        except OSError as e:
+            logger.warning(f'[stock_ml] 파생상품 캐시 저장 실패: {e}')
+        logger.info(f'[stock_ml] ETF/ETN/ELW {len(fresh)}개 갱신 ({day})')
+        return frozenset(fresh)
+
+    if cached:
+        logger.warning(f'[stock_ml] KRX 조회 실패 — 낡은 캐시 {len(cached)}개 사용')
+        return frozenset(cached)
+
+    logger.warning('[stock_ml] 파생상품 목록 없음 — ETF/ETN 판정을 건너뛴다(예측 진행)')
+    return frozenset()
+
+
+def _is_derivative(code: str, day: str) -> bool:
+    """
+    ETF/ETN/ELW 인가.
+
+    실측(2026-07-17): KODEX 200 은 정적 피처 35개 중 26개(74%)가 0이다(삼성전자는 2개).
+    pykrx 가 ETF 에 get_stock_ticker_isin / get_market_fundamental_by_date 부터 실패한다
+    — 재무제표가 없는 상품이라 PER·ROE·부채비율이 존재하지 않기 때문이다.
+    그 상태로 예측하면 293개 일반주로 학습한 모델에 0을 26개 먹이는 분포 밖 추론이 된다.
+    로컬 parquet 이 없는 411종목 중 397개(97%)가 여기 해당한다.
+    """
+    return code in _derivative_codes(day)
+
+
 def _gate_lr_signal(result: dict) -> dict:
     """
     실력이 측정되지 않은 LR 모델의 BUY/SELL 을 HOLD 로 낮춘다.
@@ -470,7 +555,7 @@ def _gate_lr_signal(result: dict) -> dict:
 
 def get_ml_prediction(code: str, ticker_yfin: str = "",
                       ticker_name: str = "") -> dict:
-    from datetime import datetime
+    # datetime 은 모듈 레벨 임포트 사용
 
     today = datetime.now().strftime('%Y-%m-%d')
     name  = ticker_name or code
@@ -479,6 +564,13 @@ def get_ml_prediction(code: str, ticker_yfin: str = "",
     if cached and cached.get('trained_date') == today:
         print(f"[ML] {code} 캐시 히트")
         return {**cached['result'], 'from_cache': True}
+
+    # ETF·ETN·ELW 는 예측 대상이 아니다 — "실력 미달로 관망" 이 아니라 애초에 대상이
+    # 아니라고 말해야 한다. 라우터가 이 error 를 404 로 내보내고 프론트가 그대로 표시한다
+    # (StockDetail.jsx:177 → :322). signal 값으로 내면 ML_META 폴백에 걸려 또 "관망"이 된다.
+    if _is_derivative(code, today):
+        return {'error': 'ETF·ETN·ELW는 AI 예측 대상이 아닙니다 '
+                         '(재무·공시 데이터가 없어 모델을 적용할 수 없습니다)'}
 
     xgb_result = _predict_xgb(code, name)
     if xgb_result:
