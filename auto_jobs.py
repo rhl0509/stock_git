@@ -1,6 +1,6 @@
 """auto_jobs.py — 서버 내장 스케줄러(APScheduler) 자동화 잡 모음.
 
-app.py 시작 시 register(scheduler)로 등록된다. register()가 실제로 거는 잡 7종:
+app.py 시작 시 register(scheduler)로 등록된다. register()가 실제로 거는 잡 8종:
   - 배당 자동 기록            토요일 09:00      (auto_dividend)
   - 모델 백업                 일요일 01:30      (auto_model_backup — 02:00 재학습 직전)
   - DB 백업 (mysqldump)       매일 21:00        (auto_db_backup — 14일 보관)
@@ -8,6 +8,7 @@ app.py 시작 시 register(scheduler)로 등록된다. register()가 실제로 �
   - 자가진단                  매일 09:00        (auto_self_check — 이상 시에만 알림)
   - 퀀트 스캔                 평일 16:25        (auto_quant_scan)
   - 워크플로 디스패처          매분              (auto_workflow_dispatch)
+  - 가계부 디스패처            5분마다           (auto_gagebu_dispatch)
 
 대상 사용자: OWNER_USER_NO 환경변수 필수 (미설정 시 잡 스킵 — 자동 탐지는 보안상 제거).
 """
@@ -72,6 +73,7 @@ def job_dividend_autoimport():
     try:
         from datetime import timedelta
         from database.db_connection import get_db_connection
+        from gagebu_outbox import enqueue, make_key
         from routes.dividend import _get_holdings_for, _fetch_div_history, _enrich_kr_dividend
 
         holdings, _src = _get_holdings_for(user_no)
@@ -106,6 +108,20 @@ def job_dividend_autoimport():
                         """, (user_no, code, h['name'], ex_date,
                               enr['pay_date'], enr['dps'], qty, enr['total'],
                               'KIS 확정 자동기록' if enr['confirmed'] else '키움 연동 자동기록'))
+                        # 가계부(별도 앱) 기록은 같은 커밋으로 적재만 하고 전송은
+                        # 디스패처가 맡는다. 이 잡은 주 1회 반복 실행되므로 멱등키가
+                        # 필수다 — 위 existing 셋과 같은 (code, ex_date) 규약을 쓴다.
+                        # 배당은 지급일에 들어오므로 pay_date 를 거래일로 쓴다.
+                        # '배당' 은 원본 stock_tracker 가 '투자' 하위로 만들어 둔
+                        # 기존 규약이다(실측: rho 장부에 income/배당 존재).
+                        enqueue(cur,
+                                idempotency_key=make_key('dividend', user_no, code, ex_date),
+                                source='dividend', member_id=user_no,
+                                type_val='income', amount=int(enr['total']),
+                                title=f"{h['name']} 배당",
+                                date_str=str(enr['pay_date'] or ex_date)[:10],
+                                category_hint='배당',
+                                owner_user_no=user_no)
                         inserted += 1
                         total_won += enr['total']
             conn.commit()
@@ -326,6 +342,27 @@ def job_workflow_dispatch():
 
 
 # ─────────────────────────────────────────────────────────────────
+# 10. 가계부 아웃박스 디스패처 (5분마다)
+# ─────────────────────────────────────────────────────────────────
+def job_gagebu_dispatch():
+    """가계부(별도 앱)로 보내야 할 매매·배당을 전송한다.
+
+    매매/배당은 자기 DB 커밋 시점에 아웃박스에 적재만 하고(원자성 유지), 실제 HTTP 는
+    여기서 분리해 보낸다. 가계부가 죽어 있으면 pending 으로 남아 다음 주기에 재시도된다.
+    """
+    try:
+        from gagebu_outbox import dispatch_pending
+        r = dispatch_pending()
+        if r.get('failed'):
+            # 실패 확정(4xx 또는 재시도 한도 소진)은 조용히 넘기지 않는다 — 이 프로젝트가
+            # 반복해 온 무증상 실패를 만들지 않기 위해 알린다.
+            _notify(f"⚠️ 가계부 연동 실패 {r['failed']}건 — gagebu_outbox 의 "
+                    f"status='failed' 행을 확인하세요.")
+    except Exception as e:
+        logger.error(f"[auto/gagebu] 디스패처 오류: {e}", exc_info=True)
+
+
+# ─────────────────────────────────────────────────────────────────
 # 등록
 # ─────────────────────────────────────────────────────────────────
 def register(scheduler) -> None:
@@ -353,5 +390,11 @@ def register(scheduler) -> None:
     scheduler.add_job(job_workflow_dispatch,
                       CronTrigger(minute='*', timezone=TZ),
                       id='auto_workflow_dispatch', replace_existing=True)
-    logger.info("[auto_jobs] 자동화 잡 7종 등록 완료 "
-                "(배당기록/모델백업/DB백업/오프사이트/자가진단/퀀트스캔/워크플로디스패처)")
+    # 5분: 매매는 즉시성이 필요 없고(가계부 기록은 사후 정리), 가계부가 잠깐 내려가도
+    # 다음 주기에 따라잡는다. 매분으로 두면 가계부 재시작 중 재시도 로그만 늘어난다.
+    scheduler.add_job(job_gagebu_dispatch,
+                      CronTrigger(minute='*/5', timezone=TZ),
+                      id='auto_gagebu_dispatch', replace_existing=True)
+    logger.info("[auto_jobs] 자동화 잡 8종 등록 완료 "
+                "(배당기록/모델백업/DB백업/오프사이트/자가진단/퀀트스캔/"
+                "워크플로디스패처/가계부디스패처)")

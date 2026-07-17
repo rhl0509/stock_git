@@ -10,6 +10,50 @@ import time as _time
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+
+def _enqueue_trade(cursor, user_no: int, txn_id: int, name: str, kind: str,
+                   quantity: int, total: int, profit: int | None = None) -> None:
+    """매매 1건을 가계부 아웃박스에 적재한다(호출자의 트랜잭션 안에서).
+
+    2026-07-17 이전에는 여기서 자기 DB 의 transactions 에 직접 INSERT 했다. 가계부가
+    별도 DB(gagebu)로 분리되면서 그 테이블은 아무도 읽지 않는 고아가 됐고, 게다가
+    `SELECT id FROM account_books WHERE member_id=%s` 가 없으면 400 으로 **매수 자체를
+    막고 있었다** — 실측 결과 회원 10명 중 8명이 그 행이 없어 매수가 불가능했다.
+    고아 테이블 조회가 본 기능을 막던 것이므로 게이트를 걷어냈다.
+
+    Args:
+        txn_id: 방금 넣은 stock_transactions 행의 id. **호출자가 명시적으로 넘긴다** —
+            여기서 cursor.lastrowid 를 읽으면 "직전 statement 가 그 INSERT" 라는
+            암묵 전제에 매달리게 되고, 사이에 한 줄만 끼어들면 키가 trade|0 으로
+            고정돼 두 번째 이후 매매가 중복키로 전부 사라진다.
+    """
+    from gagebu_outbox import enqueue, make_key
+    from routes.utils import get_owner_user_no
+
+    # 현금흐름 기준: 매수는 돈이 나가고(expense) 매도는 총액이 들어온다(income).
+    # 둘을 합치면 순증분이 곧 손익이 된다.
+    # 카테고리 힌트는 가계부의 화이트리스트(_MANAGED_CATEGORIES)에 있는 이름만
+    # 만들어진다 — 임의 이름을 보내도 미분류로 떨어질 뿐 장부가 늘지 않는다.
+    if kind == 'buy':
+        type_val, title, hint = 'expense', f"{name} 매수 {quantity}주", '매수'
+    else:
+        type_val = 'income'
+        title = f"{name} 매도 {quantity}주 (수익: {profit:+,}원)"
+        hint = '매도'
+
+    # 키에 member_id 를 넣는다 — 아웃박스는 UNIQUE(idempotency_key) 전역이고 가계부
+    # 원장은 UNIQUE(account_book_id, idempotency_key) 스코프별이라 비대칭이다. 지금은
+    # trade|{id} 가 전역 PK 라 안전하지만, 회원별 배당 잡이 생기면 같은 종목·같은
+    # 배당락일을 보유한 두 회원이 같은 키를 만들어 한쪽이 조용히 사라진다.
+    enqueue(cursor,
+            idempotency_key=make_key('trade', user_no, txn_id),
+            source='trade', member_id=user_no, type_val=type_val,
+            amount=total, title=title,
+            date_str=_dt.now().strftime('%Y-%m-%d'),
+            category_hint=hint,
+            owner_user_no=get_owner_user_no())
+
+
 # 키움 계좌 동기화 시 가져올 실현손익 기간(일). 과거 월까지 보이도록 1년치 조회.
 SYNC_TRADE_DAYS = 365
 # opt10073(일자별실현손익)은 조회기간이 약 3개월을 넘으면 0행을 반환한다.
@@ -354,15 +398,6 @@ def buy_stock(request: Request, data: dict = Body(default={})):
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute(
-                "SELECT id FROM account_books WHERE member_id = %s LIMIT 1",
-                (user_no,)
-            )
-            account_book = cursor.fetchone()
-            if not account_book:
-                return JSONResponse({"error": "가계부가 없습니다."}, status_code=400)
-            account_book_id = account_book['id']
-
             # (member_id, code) 유니크 인덱스 기반 원자적 upsert.
             # 동시 첫매수 중복 INSERT · 동시 매수 lost update를 DB 레벨에서 한 번에 방어
             # (행잠금 SELECT 불필요). ON DUPLICATE KEY UPDATE는 좌→우로 평가되므로,
@@ -383,11 +418,11 @@ def buy_stock(request: Request, data: dict = Body(default={})):
                 "INSERT INTO stock_transactions (member_id, code, name, type, quantity, price, total) VALUES (%s, %s, %s, 'buy', %s, %s, %s)",
                 (user_no, code, name, quantity, price, total)
             )
-            cursor.execute(
-                """INSERT INTO transactions (account_book_id, member_id, type, amount, title, transaction_date)
-                   VALUES (%s, %s, 'expense', %s, %s, NOW())""",
-                (account_book_id, user_no, total, f"{name} 매수 {quantity}주")
-            )
+            stock_txn_id = cursor.lastrowid
+            # 가계부 기록은 이제 별도 앱(gagebu)의 HTTP 다. 이 트랜잭션 안에서 호출하면
+            # 가계부 장애가 매수를 실패시키고 HTTP 는 롤백되지도 않는다. 같은 커밋으로
+            # 의도만 적재하고 전송은 디스패처가 맡는다(gagebu_outbox 참고).
+            _enqueue_trade(cursor, user_no, stock_txn_id, name, 'buy', quantity, total)
 
         conn.commit()
         return {"status": "ok", "message": f"{name} {quantity}주 매수 완료"}
@@ -446,20 +481,9 @@ def sell_stock(request: Request, data: dict = Body(default={})):
                 "INSERT INTO stock_transactions (member_id, code, name, type, quantity, price, total) VALUES (%s, %s, %s, 'sell', %s, %s, %s)",
                 (user_no, code, name, quantity, price, total)
             )
-            cursor.execute(
-                "SELECT id FROM account_books WHERE member_id = %s LIMIT 1",
-                (user_no,)
-            )
-            account_book = cursor.fetchone()
-            if not account_book:
-                return JSONResponse({"error": "가계부가 없습니다."}, status_code=400)
-            account_book_id = account_book['id']
-
-            cursor.execute(
-                """INSERT INTO transactions (account_book_id, member_id, type, amount, title, transaction_date)
-                   VALUES (%s, %s, 'income', %s, %s, NOW())""",
-                (account_book_id, user_no, total, f"{name} 매도 {quantity}주 (수익: {profit:+,}원)")
-            )
+            stock_txn_id = cursor.lastrowid
+            _enqueue_trade(cursor, user_no, stock_txn_id, name, 'sell', quantity, total,
+                           profit=profit)
 
         conn.commit()
         return {"status": "ok", "message": f"{name} {quantity}주 매도 완료", "profit": profit}

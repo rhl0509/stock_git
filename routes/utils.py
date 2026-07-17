@@ -67,8 +67,11 @@ def get_user_no(request: Request):
     return request.session.get("user_no")
 
 
-def get_account_book_id(request: Request):
-    return request.session.get("account_book_id", 2)
+# get_account_book_id() 를 2026-07-17 제거했다. 호출자가 0이었고 `account_book_id` 기본값
+# 2를 하드코딩하고 있었다 — 가계부와 DB 를 공유하던 시절의 전제다. 가계부가 별도 DB
+# (gagebu)로 분리된 지금 그 id 는 이 앱에서 의미가 없고(실측: 같은 사용자의 장부 id 가
+# stock_stack=5, gagebu=2 로 다르다), 누가 재사용하면 분리로 없앤 혼선이 되돌아온다.
+# 가계부 기록은 gagebu_outbox 를 거치고, 장부는 가계부가 토큰 행에서 정한다.
 
 
 # ── 소유자(주인 단일계좌) 게이트 ──
@@ -78,8 +81,7 @@ def get_account_book_id(request: Request):
 
 def get_owner_user_no():
     """단일 키움/KIS 계좌의 소유자 user_no. auto_jobs.get_owner_user_no 재사용
-    (OWNER_USER_NO env 우선, 없으면 데이터 보유 회원 자동 탐지).
-    공개 배포 시에는 OWNER_USER_NO 를 .env 에 명시하는 것을 강력 권장."""
+    (OWNER_USER_NO env 필수 — 미설정 시 None 반환, 소유자 게이트 fail-closed)."""
     try:
         from auto_jobs import get_owner_user_no as _g
         return _g()
