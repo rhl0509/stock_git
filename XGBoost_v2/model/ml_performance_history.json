@@ -1,0 +1,26 @@
+[
+  {
+    "trained_at": "2026-07-17T15:59:35.417894",
+    "n_tickers": 293,
+    "n_samples": 489115,
+    "n_features": 82,
+    "labels": {
+      "daily": {
+        "cv_auc": 0.6924,
+        "cv_acc": 0.5599,
+        "buy_ratio": 0.1078
+      },
+      "short": {
+        "cv_auc": 0.6567,
+        "cv_acc": 0.5943,
+        "buy_ratio": 0.1171
+      },
+      "swing": {
+        "cv_auc": 0.5928,
+        "cv_acc": 0.6551,
+        "buy_ratio": 0.1348
+      }
+    },
+    "use_pit": true
+  }
+]

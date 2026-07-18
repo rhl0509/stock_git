@@ -614,12 +614,14 @@ def ml_predict_legacy(request: Request, data: dict = Body(default={})):
 
 @router.get('/stock/ml/cache')
 def ml_cache_status():
+    # 캐시 엔트리는 {'trained_date', 'result'} 구조다(:578,:598). 예전에는 존재하지
+    # 않는 'meta' 키를 읽어 전 필드가 항상 null 이었다. result 에서 읽는다.
     return {
         code: {
             'trained_date': v.get('trained_date'),
-            'cv_accuracy':  v.get('meta', {}).get('cv_accuracy'),
-            'sample_size':  v.get('meta', {}).get('sample_size'),
-            'model_type':   v.get('meta', {}).get('model_type'),
+            'signal':       v.get('result', {}).get('signal'),
+            'confidence':   v.get('result', {}).get('confidence'),
+            'model_type':   v.get('result', {}).get('model_type'),
         }
         for code, v in _MODEL_CACHE.items()
     }

@@ -17,7 +17,16 @@ cache/
 data/
 logs/
 backup/
+# DB 덤프(회원 데이터 포함) — 절대 커밋 금지
+_db_backup/
+# CatBoost 학습 로그
+catboost_info/
 XGBoost_v2/data/
+# 아래 *.cbm 등은 model/ 직속만 매칭하고 하위 폴더는 안 걸린다. 백업/절제 폴더를
+# 명시적으로 제외한다(재학습 산출물이라 재생성 가능, 커밋 대상 아님).
+XGBoost_v2/model/_backup_*/
+XGBoost_v2/model/_ablation_*/
+XGBoost_v2/model/_pit_result_*/
 XGBoost_v2/model/*.cbm
 XGBoost_v2/model/*.pkl
 XGBoost_v2/model/*.txt

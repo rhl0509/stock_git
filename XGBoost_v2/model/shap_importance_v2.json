@@ -1,5 +1,248 @@
 {
-  "daily": [],
-  "short": [],
-  "swing": []
+  "daily": [
+    {
+      "feature": "ret_1d",
+      "shap_importance": 0.432778
+    },
+    {
+      "feature": "cci_20",
+      "shap_importance": 0.21868
+    },
+    {
+      "feature": "gap_open",
+      "shap_importance": 0.201326
+    },
+    {
+      "feature": "bb_pct",
+      "shap_importance": 0.139556
+    },
+    {
+      "feature": "atr_ratio",
+      "shap_importance": 0.070695
+    },
+    {
+      "feature": "stoch_k",
+      "shap_importance": 0.047417
+    },
+    {
+      "feature": "ma20_gap",
+      "shap_importance": 0.035606
+    },
+    {
+      "feature": "ret_vs_market",
+      "shap_importance": 0.031704
+    },
+    {
+      "feature": "vol_cluster",
+      "shap_importance": 0.031019
+    },
+    {
+      "feature": "ma5_gap",
+      "shap_importance": 0.028202
+    },
+    {
+      "feature": "ma60_gap",
+      "shap_importance": 0.023901
+    },
+    {
+      "feature": "ret_20d",
+      "shap_importance": 0.021166
+    },
+    {
+      "feature": "ma10_gap",
+      "shap_importance": 0.020844
+    },
+    {
+      "feature": "chan_pos",
+      "shap_importance": 0.020533
+    },
+    {
+      "feature": "rsi_vs_market",
+      "shap_importance": 0.019129
+    },
+    {
+      "feature": "vol_ratio_5",
+      "shap_importance": 0.018099
+    },
+    {
+      "feature": "macd_hist",
+      "shap_importance": 0.014333
+    },
+    {
+      "feature": "corr_sp500_20d",
+      "shap_importance": 0.014243
+    },
+    {
+      "feature": "ret_5d",
+      "shap_importance": 0.013844
+    },
+    {
+      "feature": "vol_ratio_20",
+      "shap_importance": 0.013542
+    }
+  ],
+  "short": [
+    {
+      "feature": "ret_1d",
+      "shap_importance": 0.347389
+    },
+    {
+      "feature": "gap_open",
+      "shap_importance": 0.164203
+    },
+    {
+      "feature": "cci_20",
+      "shap_importance": 0.139131
+    },
+    {
+      "feature": "bb_pct",
+      "shap_importance": 0.082813
+    },
+    {
+      "feature": "atr_ratio",
+      "shap_importance": 0.057789
+    },
+    {
+      "feature": "ret_vs_market",
+      "shap_importance": 0.034079
+    },
+    {
+      "feature": "stoch_k",
+      "shap_importance": 0.031688
+    },
+    {
+      "feature": "ma60_gap",
+      "shap_importance": 0.028194
+    },
+    {
+      "feature": "ma10_gap",
+      "shap_importance": 0.024169
+    },
+    {
+      "feature": "ret_20d",
+      "shap_importance": 0.023287
+    },
+    {
+      "feature": "ma5_gap",
+      "shap_importance": 0.022702
+    },
+    {
+      "feature": "corr_sp500_20d",
+      "shap_importance": 0.021088
+    },
+    {
+      "feature": "rsi_vs_market",
+      "shap_importance": 0.019923
+    },
+    {
+      "feature": "ma20_gap",
+      "shap_importance": 0.016883
+    },
+    {
+      "feature": "vol_cluster",
+      "shap_importance": 0.015716
+    },
+    {
+      "feature": "macd_hist",
+      "shap_importance": 0.01494
+    },
+    {
+      "feature": "chan_pos",
+      "shap_importance": 0.014619
+    },
+    {
+      "feature": "macd",
+      "shap_importance": 0.014136
+    },
+    {
+      "feature": "low52w_pct",
+      "shap_importance": 0.013797
+    },
+    {
+      "feature": "macd_hist_lag5",
+      "shap_importance": 0.012976
+    }
+  ],
+  "swing": [
+    {
+      "feature": "ret_1d",
+      "shap_importance": 0.148521
+    },
+    {
+      "feature": "gap_open",
+      "shap_importance": 0.071786
+    },
+    {
+      "feature": "ret_vs_market",
+      "shap_importance": 0.042946
+    },
+    {
+      "feature": "low52w_pct",
+      "shap_importance": 0.039033
+    },
+    {
+      "feature": "atr_ratio",
+      "shap_importance": 0.037841
+    },
+    {
+      "feature": "ma60_gap",
+      "shap_importance": 0.031938
+    },
+    {
+      "feature": "rsi_vs_market",
+      "shap_importance": 0.028638
+    },
+    {
+      "feature": "macd_hist",
+      "shap_importance": 0.028478
+    },
+    {
+      "feature": "corr_sp500_20d",
+      "shap_importance": 0.022398
+    },
+    {
+      "feature": "ret_20d",
+      "shap_importance": 0.021282
+    },
+    {
+      "feature": "op_margin",
+      "shap_importance": 0.02017
+    },
+    {
+      "feature": "hurst",
+      "shap_importance": 0.01948
+    },
+    {
+      "feature": "adx_14",
+      "shap_importance": 0.018112
+    },
+    {
+      "feature": "macd",
+      "shap_importance": 0.017531
+    },
+    {
+      "feature": "debt_to_equity",
+      "shap_importance": 0.015196
+    },
+    {
+      "feature": "pe_ratio",
+      "shap_importance": 0.014983
+    },
+    {
+      "feature": "fcf_yield",
+      "shap_importance": 0.014744
+    },
+    {
+      "feature": "gross_margin",
+      "shap_importance": 0.014002
+    },
+    {
+      "feature": "high52w_pct",
+      "shap_importance": 0.013969
+    },
+    {
+      "feature": "cci_20",
+      "shap_importance": 0.013304
+    }
+  ]
 }
