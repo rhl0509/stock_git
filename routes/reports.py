@@ -29,11 +29,9 @@ router = APIRouter(dependencies=[Depends(require_login_smart)], prefix="/reports
 
 @router.get("", response_class=HTMLResponse)
 def reports_page(request: Request):
-    from routes.utils import require_login
-    user = require_login(request)
-    if hasattr(user, "status_code"):
-        return user
-
+    # 인증은 라우터 레벨 require_login_smart(:23)가 이미 건다. 예전엔 여기서
+    # require_login(request) 를 await 없이 불러 코루틴 객체를 만들고 hasattr 검사가
+    # 항상 False 라 죽은 코드였다(템플릿도 user 를 안 쓴다). 제거한다.
     from agent.store import get_reports
     from templates_config import templates
 
@@ -45,7 +43,6 @@ def reports_page(request: Request):
         "stock/reports.html",
         {
             "request": request,
-            "user":    user,
             "daily":   daily,
             "weekly":  weekly,
             "monthly": monthly,
@@ -69,11 +66,8 @@ def api_generate(
     background_tasks: BackgroundTasks,
     report_type: str = Query(..., description="daily | weekly | monthly"),
 ):
-    from routes.utils import api_require_login
-    user = api_require_login(request)
-    if hasattr(user, "status_code"):
-        return user
-
+    # 인증은 라우터 레벨(:23)이 건다. 아래 죽은 코드(await 없는 코루틴 + 항상-False
+    # hasattr)를 제거했다.
     if report_type not in ("daily", "weekly", "monthly"):
         raise HTTPException(status_code=400, detail="report_type은 daily/weekly/monthly 중 하나")
 
@@ -132,11 +126,7 @@ def api_report_detail(report_id: int):
 # /{report_id}는 int 경로만 매칭되므로 /schedule, /generate, /json과 충돌 없음
 @router.get("/{report_id}", response_class=HTMLResponse)
 def report_detail_page(request: Request, report_id: int):
-    from routes.utils import require_login
-    user = require_login(request)
-    if hasattr(user, "status_code"):
-        return user
-
+    # 인증은 라우터 레벨(:23)이 건다(위 죽은 코드 제거).
     from agent.store import get_report_by_id
     from templates_config import templates
 
@@ -146,7 +136,7 @@ def report_detail_page(request: Request, report_id: int):
 
     return templates.TemplateResponse(
         "stock/report_detail.html",
-        {"request": request, "user": user, "report": report},
+        {"request": request, "report": report},
     )
 
 

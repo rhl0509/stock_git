@@ -59,8 +59,10 @@ def _notify(msg: str) -> None:
     try:
         from notify.telegram import send_telegram
         send_telegram(msg)
-    except Exception:
-        pass
+    except Exception as e:
+        # 알림 발송 실패를 완전히 삼키면, 실패확정 통지 자체가 실패해도 아무 흔적이
+        # 없다(무증상). 최소한 로그로 남긴다 — 이제 app.log 회전 파일에 보존된다.
+        logger.warning(f"[auto/_notify] 알림 발송 실패: {e}")
 
 
 # ─────────────────────────────────────────────────────────────────

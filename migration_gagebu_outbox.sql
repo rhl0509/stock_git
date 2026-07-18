@@ -24,8 +24,10 @@ CREATE TABLE IF NOT EXISTS gagebu_outbox (
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
     -- 발신측이 만든다(의미를 아는 쪽이므로). 가계부의 stock_ingest_ledger 가
     -- UNIQUE(account_book_id, idempotency_key) 로 중복을 구조적으로 막는다.
-    --   배당: SHA2('dividend|{code}|{ex_div_date}', 256)
-    --   매매: SHA2('trade|{stock_transactions.id}', 256)
+    --   배당: SHA2('dividend|{user_no}|{code}|{ex_div_date}', 256)
+    --   매매: SHA2('trade|{user_no}|{stock_transactions.id}', 256)
+    --   (user_no 포함 — 아웃박스는 UNIQUE(idempotency_key) 전역이라 회원별 충돌 방지.
+    --    gagebu_outbox.py make_key / auto_jobs.py / stock_holdings.py 와 일치.)
     idempotency_key CHAR(64) NOT NULL,
     source          VARCHAR(20) NOT NULL,          -- 'dividend' | 'trade'
     member_id       INT NOT NULL,
