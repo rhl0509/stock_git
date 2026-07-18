@@ -17,6 +17,7 @@ XGBoost_v2/daily_recommend.py
 from __future__ import annotations
 
 import json, logging, pickle, time
+import threading
 from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
@@ -29,6 +30,12 @@ import pandas as pd
 from .quant_gate import compute_composite_signal
 
 logger = logging.getLogger(__name__)
+
+# 공유 Booster(xgb/lgb/cat)의 .predict 는 스레드 안전성이 보장되지 않는다(버전별 —
+# 확인 필요). _model_score_universe 가 ThreadPoolExecutor(8)로, signal.predict 가
+# FastAPI 스레드풀로 같은 앙상블에 동시 진입하므로, 추론을 이 락으로 직렬화한다.
+# (예측이 CPU 연산이라 직렬화 손실은 작고, I/O 병목은 스레드가 이미 흡수한다.)
+_ensemble_predict_lock = threading.Lock()
 
 ROOT       = Path(__file__).parent.parent
 MODEL_DIR  = Path(__file__).parent / 'model'
@@ -136,24 +143,29 @@ def _predict_ensemble(ensemble: dict, X_scaled: np.ndarray,
     import xgboost as xgb
     lbl   = ensemble["labels"][label]
     meta  = lbl.get("meta") or {}
-    dmat  = xgb.DMatrix(X_scaled)
-    p_xgb = lbl["xgb"].predict(dmat)
 
-    meta_cols = [p_xgb]
-    if meta.get("has_lgb") and lbl.get("lgb") is not None:
-        meta_cols.append(lbl["lgb"].predict(X_scaled))
-    if meta.get("has_cat") and lbl.get("cat") is not None:
-        meta_cols.append(lbl["cat"].predict_proba(X_scaled)[:, 1])
+    # 공유 Booster 동시 호출을 직렬화한다(모듈 헤더 참고). signal.predict 와
+    # _model_score_universe(ThreadPool 8) 두 진입점이 같은 객체를 쓴다.
+    with _ensemble_predict_lock:
+        dmat  = xgb.DMatrix(X_scaled)
+        p_xgb = lbl["xgb"].predict(dmat)
 
-    meta_X = np.column_stack(meta_cols) if len(meta_cols) > 1 else meta_cols[0].reshape(-1, 1)
+        meta_cols = [p_xgb]
+        if meta.get("has_lgb") and lbl.get("lgb") is not None:
+            meta_cols.append(lbl["lgb"].predict(X_scaled))
+        if meta.get("has_cat") and lbl.get("cat") is not None:
+            meta_cols.append(lbl["cat"].predict_proba(X_scaled)[:, 1])
 
-    if meta.get("model") is not None:
-        raw_proba = meta["model"].predict_proba(meta_X)[:, 1]
-        calibrator = meta.get("calibrator")
-        if calibrator is not None:
-            return calibrator.predict(raw_proba).astype(np.float32)
-        return raw_proba
-    return p_xgb
+        meta_X = (np.column_stack(meta_cols) if len(meta_cols) > 1
+                  else meta_cols[0].reshape(-1, 1))
+
+        if meta.get("model") is not None:
+            raw_proba = meta["model"].predict_proba(meta_X)[:, 1]
+            calibrator = meta.get("calibrator")
+            if calibrator is not None:
+                return calibrator.predict(raw_proba).astype(np.float32)
+            return raw_proba
+        return p_xgb
 
 
 # ─────────────────────────────────────────────────────────────────────────

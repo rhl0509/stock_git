@@ -348,16 +348,22 @@ def job_gagebu_dispatch():
     """가계부(별도 앱)로 보내야 할 매매·배당을 전송한다.
 
     매매/배당은 자기 DB 커밋 시점에 아웃박스에 적재만 하고(원자성 유지), 실제 HTTP 는
-    여기서 분리해 보낸다. 가계부가 죽어 있으면 pending 으로 남아 다음 주기에 재시도된다.
+    여기서 분리해 보낸다. 재시도 가능한 실패는 지수 백오프로 pending 을 유지하므로
+    가계부가 오래 죽어 있어도 살아나면 따라잡는다(gagebu_outbox 참고).
     """
     try:
-        from gagebu_outbox import dispatch_pending
+        from gagebu_outbox import dispatch_pending, find_stuck
         r = dispatch_pending()
         if r.get('failed'):
-            # 실패 확정(4xx 또는 재시도 한도 소진)은 조용히 넘기지 않는다 — 이 프로젝트가
-            # 반복해 온 무증상 실패를 만들지 않기 위해 알린다.
-            _notify(f"⚠️ 가계부 연동 실패 {r['failed']}건 — gagebu_outbox 의 "
-                    f"status='failed' 행을 확인하세요.")
+            # 실패 확정(4xx·payload 파손 — 재시도해도 같음)은 조용히 넘기지 않는다.
+            # 근본 원인을 고친 뒤 reset_failed() 로 재개해야 한다.
+            _notify(f"⚠️ 가계부 연동 실패확정 {r['failed']}건(4xx) — gagebu_outbox 의 "
+                    f"status='failed' 행 확인 후 원인 수정, reset_failed() 로 재개.")
+        # 재시도 가능 실패로 오래 막힌 행은 폐기하지 않으므로, 대신 하루 넘게 못 보낸
+        # 게 있으면 한 번 알린다(가계부가 장기 다운이거나 토큰이 만료됐을 수 있음).
+        stuck = find_stuck()
+        if stuck:
+            _notify(f"⚠️ 가계부 연동 24h+ 미전송 {len(stuck)}건 — 가계부 기동/토큰 확인.")
     except Exception as e:
         logger.error(f"[auto/gagebu] 디스패처 오류: {e}", exc_info=True)
 

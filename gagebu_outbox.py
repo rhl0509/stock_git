@@ -18,12 +18,19 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
-_MAX_ATTEMPTS = 5      # 이후 failed 로 고정. 무한 재시도로 로그를 태우지 않는다.
 _BATCH = 50
+
+# 지수 백오프 상한(분). 재시도 가능 실패(연결 거부·5xx)는 attempts 로 폐기하지 않고
+# next_retry_at 을 뒤로 미룬다: 5분→10→20→40→80→…→최대 720분(12h). 가계부가 밤새
+# 꺼져 있어도 살아나면 따라잡는다.
+_BACKOFF_BASE_MIN = 5
+_BACKOFF_MAX_MIN = 720
+# 이 시간(시간)을 넘도록 pending 인 행은 "오래 막힘"으로 한 번 알린다(폐기하지 않음).
+_STUCK_ALERT_HOURS = 24
 
 
 def make_key(*parts: str) -> str:
@@ -71,12 +78,18 @@ def enqueue(cursor, *, idempotency_key: str, source: str, member_id: int,
     return created
 
 
+def _backoff_minutes(attempts: int) -> int:
+    """attempts 회 실패 후 다음 재시도까지 대기(분). 지수, 상한 있음."""
+    return min(_BACKOFF_BASE_MIN * (2 ** max(0, attempts)), _BACKOFF_MAX_MIN)
+
+
 def dispatch_pending(limit: int = _BATCH) -> dict:
     """
-    pending 행을 가계부로 전송한다. 디스패처 잡이 주기적으로 호출.
+    재시도 시각이 된 pending 행을 가계부로 전송한다. 디스패처 잡이 주기적으로 호출.
 
-    전송 실패는 행에 남고(attempts/last_error) 다음 주기에 다시 집는다.
-    재시도 불가(4xx)면 즉시 failed 로 고정한다 — 같은 요청은 결과가 같다.
+    재시도 가능 실패(연결 거부·5xx·429)는 attempts 로 폐기하지 않고 next_retry_at 을
+    지수 백오프로 미룬다 — 가계부가 오래 죽어 있어도 살아나면 따라잡는다.
+    재시도 불가(4xx)·payload 파손은 즉시 failed 로 고정한다(같은 요청은 결과가 같다).
     """
     from database.db_connection import get_db_connection
     from gagebu_client import is_enabled, send_transaction
@@ -84,21 +97,24 @@ def dispatch_pending(limit: int = _BATCH) -> dict:
     if not is_enabled():
         return {'skipped': True, 'reason': 'GAGEBU_INGEST_TOKEN 미설정'}
 
+    now = datetime.now()
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
+            # next_retry_at 이 NULL(첫 시도)이거나 도래한 행만 집는다.
             cursor.execute(
                 """SELECT id, idempotency_key, source, payload, attempts
                    FROM gagebu_outbox
-                   WHERE status = 'pending' AND attempts < %s
+                   WHERE status = 'pending'
+                     AND (next_retry_at IS NULL OR next_retry_at <= %s)
                    ORDER BY id LIMIT %s""",
-                (_MAX_ATTEMPTS, limit),
+                (now, limit),
             )
             rows = cursor.fetchall()
     finally:
         conn.close()
 
-    sent = dup = failed = 0
+    sent = dup = failed = retried = 0
     for row in rows:
         # 행별 예외 격리 — 한 행이 던지면 루프가 죽고, 그 행은 attempts 가 안 오른 채
         # pending 으로 남아 ORDER BY id 가 다음 주기에도 그 행을 선두로 집는다.
@@ -135,21 +151,88 @@ def dispatch_pending(limit: int = _BATCH) -> dict:
                     retryable = result.retryable if result is not None else False
                     err = (result.error if result is not None
                            else 'payload 처리 실패 — 로그 확인')
-                    # attempts 는 DB 에서 증가시킨다(읽은 값을 덮으면 동시 실행 시 lost update).
-                    final = (not retryable) or (row['attempts'] + 1) >= _MAX_ATTEMPTS
-                    cursor.execute(
-                        """UPDATE gagebu_outbox
-                           SET status=%s, attempts=attempts+1, last_error=%s
-                           WHERE id=%s""",
-                        ('failed' if final else 'pending', (err or '')[:1000], row['id']),
-                    )
-                    if final:
+                    if not retryable:
+                        # 4xx·payload 파손 → 즉시 failed. 백오프해도 결과가 같다.
+                        cursor.execute(
+                            """UPDATE gagebu_outbox
+                               SET status='failed', attempts=attempts+1, last_error=%s
+                               WHERE id=%s""",
+                            ((err or '')[:1000], row['id']),
+                        )
                         failed += 1
+                    else:
+                        # 재시도 가능 → pending 유지, next_retry_at 을 백오프로 미룬다.
+                        # attempts 로 폐기하지 않는다(가계부 장기 다운을 견디게).
+                        wait = _backoff_minutes(row['attempts'] + 1)
+                        cursor.execute(
+                            """UPDATE gagebu_outbox
+                               SET attempts=attempts+1,
+                                   next_retry_at=%s, last_error=%s
+                               WHERE id=%s""",
+                            (now + timedelta(minutes=wait), (err or '')[:1000], row['id']),
+                        )
+                        retried += 1
             conn.commit()
         finally:
             conn.close()
 
     if rows:
-        logger.info(f'[gagebu_outbox] 전송 {sent}건(중복 {dup}) 실패확정 {failed}건 '
-                    f'/ 대상 {len(rows)}건')
-    return {'picked': len(rows), 'sent': sent, 'duplicate': dup, 'failed': failed}
+        logger.info(f'[gagebu_outbox] 전송 {sent}건(중복 {dup}) 재시도대기 {retried}건 '
+                    f'실패확정 {failed}건 / 대상 {len(rows)}건')
+    return {'picked': len(rows), 'sent': sent, 'duplicate': dup,
+            'retried': retried, 'failed': failed}
+
+
+def find_stuck(hours: int = _STUCK_ALERT_HOURS) -> list[dict]:
+    """생성 후 hours 시간이 지나도록 못 보낸 pending 행. 알림·모니터링용."""
+    from database.db_connection import get_db_connection
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """SELECT id, source, member_id, attempts, last_error, created_at
+                   FROM gagebu_outbox
+                   WHERE status='pending' AND created_at < %s
+                   ORDER BY id""",
+                (datetime.now() - timedelta(hours=hours),),
+            )
+            return cursor.fetchall()
+    finally:
+        conn.close()
+
+
+def reset_failed(source: str | None = None) -> int:
+    """failed 행을 pending 으로 되돌린다(재시도 재개). 반환: 되돌린 행 수.
+
+    4xx 로 실패한 행(입력·인증 문제)은 근본 원인을 고친 뒤 이걸 호출해야 의미가 있다
+    — 그대로 되돌리면 같은 4xx 로 다시 failed 된다. attempts·next_retry_at 을 리셋해
+    즉시 재시도 대상으로 만든다. 멱등이라 이미 기록된 건은 가계부가 duplicate 로 흡수한다.
+
+    운영에서 호출: python -c "import gagebu_outbox as o; print(o.reset_failed())"
+    """
+    from database.db_connection import get_db_connection
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            if source:
+                cursor.execute(
+                    """UPDATE gagebu_outbox
+                       SET status='pending', attempts=0, next_retry_at=NULL,
+                           last_error=NULL
+                       WHERE status='failed' AND source=%s""",
+                    (source,),
+                )
+            else:
+                cursor.execute(
+                    """UPDATE gagebu_outbox
+                       SET status='pending', attempts=0, next_retry_at=NULL,
+                           last_error=NULL
+                       WHERE status='failed'""",
+                )
+            n = cursor.rowcount
+        conn.commit()
+    finally:
+        conn.close()
+    logger.info(f'[gagebu_outbox] failed → pending 복구 {n}건'
+                + (f' (source={source})' if source else ''))
+    return n
