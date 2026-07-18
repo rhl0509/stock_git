@@ -244,17 +244,40 @@ def build_training_data(
 # Walk-forward CV
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _purge_mask(dates: np.ndarray | None, train_end: int, val_start: int,
+                purge_days: int) -> np.ndarray:
+    """
+    train 구간[0:train_end] 에서 val 시작 날짜의 purge_days 이내 행을 제거하는 마스크.
+
+    라벨은 미래 purge_days 일 가격으로 만들어지므로, val 직전 train 샘플의 라벨이
+    val 구간 가격을 물고 들어온다(look-ahead). 그 겹치는 창을 잘라낸다(purge/embargo).
+    dates 가 없으면 purge 불가 → 전부 유지(마스크 all-True).
+    데이터가 날짜 전역 정렬돼 있어 '행 N개' 가 아니라 '달력 N일' 로 잘라야 정확하다
+    (여러 종목이 같은 날짜를 공유하므로).
+    """
+    if dates is None or purge_days <= 0 or train_end == 0:
+        return np.ones(train_end, dtype=bool)
+    val_first_date = dates[val_start]
+    cutoff = val_first_date - np.timedelta64(purge_days, 'D')
+    return dates[:train_end] <= cutoff
+
+
 def walk_forward_cv(X: np.ndarray, y: np.ndarray, params: dict,
                     n_splits: int = 5, n_rounds: int = 200,
-                    sample_weight: np.ndarray | None = None) -> dict:
+                    sample_weight: np.ndarray | None = None,
+                    dates: np.ndarray | None = None,
+                    purge_days: int = 0) -> dict:
     """
-    시간 분할 walk-forward CV.
+    시간 분할 walk-forward CV (purge/embargo 지원).
 
     ⚠ X 는 **스케일링 전(raw)** 을 넘길 것. 스케일러를 CV 밖에서 전체 데이터에 fit 하면
     검증 폴드의 평균·분산이 학습에 새어 지표가 부풀려진다(preprocessing leakage).
     폴드마다 train 구간에만 fit 해서 val 에 transform 한다.
     또 X 는 build_training_data 가 날짜로 전역 정렬해 반환한 것이어야 한다 — 그래야
     아래 위치 슬라이싱이 실제 시간 분할이 된다.
+
+    purge_days > 0 이고 dates 가 주어지면, train 끝과 val 시작 사이에 라벨 지평선만큼
+    간격을 둬 라벨 창이 val 을 물지 않게 한다(_purge_mask 참고).
     """
     import xgboost as xgb
     fold_size = len(X) // n_splits
@@ -264,11 +287,13 @@ def walk_forward_cv(X: np.ndarray, y: np.ndarray, params: dict,
         train_end = val_start
         if train_end < 60:
             continue
-        X_tr_raw, y_tr = X[:train_end], y[:train_end]
+        mask = _purge_mask(dates, train_end, val_start, purge_days)
+        X_tr_raw, y_tr = X[:train_end][mask], y[:train_end][mask]
         X_val_raw, y_val = X[val_start:val_start + fold_size], y[val_start:val_start + fold_size]
         if len(X_tr_raw) < 30 or len(X_val_raw) < 10 or len(np.unique(y_tr)) < 2:
             continue
-        sw_tr = sample_weight[:train_end] if sample_weight is not None else None
+        sw_tr = (sample_weight[:train_end][mask]
+                 if sample_weight is not None else None)
 
         # 폴드 내 스케일링 — train 에만 fit
         fold_scaler = StandardScaler().fit(X_tr_raw)
@@ -305,13 +330,14 @@ def walk_forward_cv(X: np.ndarray, y: np.ndarray, params: dict,
 
 def get_oof_predictions(X: np.ndarray, y: np.ndarray,
                         train_fn, dates: np.ndarray | None = None,
-                        n_splits: int = 5) -> np.ndarray:
+                        n_splits: int = 5, purge_days: int = 0) -> np.ndarray:
     """
     Walk-forward OOF 예측값 반환 (스태킹 메타피처용).
 
     ⚠ X 는 walk_forward_cv 와 같은 이유로 **스케일링 전(raw)** 을 넘긴다.
     dates 를 주면 폴드의 train 구간 실제 날짜를 train_fn 에 전달해 최신 가중치를
     계산하게 한다(예전에는 np.arange 를 가짜 날짜로 변환해 써서 가중치가 무의미했다).
+    purge_days > 0 이면 walk_forward_cv 와 같은 purge/embargo 를 적용한다.
 
     train_fn(X_tr, y_tr, X_val, sw_tr) — 스케일링된 배열과 샘플 가중치를 받는다.
     """
@@ -322,7 +348,8 @@ def get_oof_predictions(X: np.ndarray, y: np.ndarray,
         train_end = val_start
         if train_end < 60:
             continue
-        X_tr_raw, y_tr = X[:train_end], y[:train_end]
+        mask = _purge_mask(dates, train_end, val_start, purge_days)
+        X_tr_raw, y_tr = X[:train_end][mask], y[:train_end][mask]
         X_val_raw      = X[val_start:val_start + fold_size]
         if len(X_tr_raw) < 30 or len(np.unique(y_tr)) < 2:
             continue
@@ -331,7 +358,7 @@ def get_oof_predictions(X: np.ndarray, y: np.ndarray,
         X_tr  = fold_scaler.transform(X_tr_raw).astype(np.float32)
         X_val = fold_scaler.transform(X_val_raw).astype(np.float32)
 
-        sw_tr = (compute_sample_weights(dates[:train_end])
+        sw_tr = (compute_sample_weights(dates[:train_end][mask])
                  if dates is not None else None)
 
         preds = train_fn(X_tr, y_tr, X_val, sw_tr)
@@ -344,7 +371,8 @@ def get_oof_predictions(X: np.ndarray, y: np.ndarray,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def optuna_tune(X, y, n_trials: int = 20,
-                sample_weight=None) -> tuple[dict, int]:
+                sample_weight=None, dates=None,
+                purge_days: int = 0) -> tuple[dict, int]:
     """⚠ X 는 walk_forward_cv 로 그대로 넘어간다 — 스케일링 전(raw)을 줄 것."""
     try:
         import optuna
@@ -367,7 +395,8 @@ def optuna_tune(X, y, n_trials: int = 20,
         }
         nr = trial.suggest_int("n_rounds", 100, 400)
         return walk_forward_cv(X, y, p, n_rounds=nr,
-                               sample_weight=sample_weight)["auc"]
+                               sample_weight=sample_weight,
+                               dates=dates, purge_days=purge_days)["auc"]
 
     study = optuna.create_study(direction="maximize")
     study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
@@ -483,20 +512,27 @@ def train_all(tickers: list[str], train_end: str = "",
             logger.warning(f"[train] {label_name} BUY 비율 이상({buy_ratio:.1%}) — 스킵")
             continue
 
+        # 이 라벨의 지평선(일) — CV 폴드 경계에서 purge/embargo 로 잘라낼 창.
+        # 라벨이 미래 이만큼의 가격으로 만들어지므로, val 직전 train 샘플이 val 을 물지
+        # 않게 이 일수만큼 간격을 둔다.
+        purge_days = LABEL_CONFIGS[label_name]["days"]
+
         # ── 파라미터 ───────────────────────────────────────────────────
         if skip_optuna or n_trials == 0:
             params, n_rounds = _default_params()
         else:
             logger.info(f"[train] Optuna {n_trials}회 튜닝...")
             params, n_rounds = optuna_tune(X_raw, y, n_trials,
-                                           sample_weight=sample_weight)
+                                           sample_weight=sample_weight,
+                                           dates=dates_arr, purge_days=purge_days)
             logger.info(f"[train] 최적: {params}")
 
         # ── CV ────────────────────────────────────────────────────────
         # raw 를 넘긴다 — 스케일러는 폴드 안에서 train 구간에만 fit 된다.
         cv = walk_forward_cv(X_raw, y, params, n_rounds=n_rounds,
-                             sample_weight=sample_weight)
-        logger.info(f"  CV  AUC={cv['auc']:.4f}  Acc={cv['acc']:.4f}")
+                             sample_weight=sample_weight,
+                             dates=dates_arr, purge_days=purge_days)
+        logger.info(f"  CV  AUC={cv['auc']:.4f}  Acc={cv['acc']:.4f} (purge {purge_days}d)")
 
         spw = (1 - buy_ratio) / (buy_ratio + 1e-9)
 
@@ -560,7 +596,7 @@ def train_all(tickers: list[str], train_end: str = "",
                              num_boost_round=n_rounds, verbose_eval=False)
             return b.predict(xgb.DMatrix(Xval))
 
-        oof_xgb = get_oof_predictions(X_raw, y, xgb_train_fn, dates=dates_arr)
+        oof_xgb = get_oof_predictions(X_raw, y, xgb_train_fn, dates=dates_arr, purge_days=purge_days)
 
         meta_cols = [oof_xgb]
         if HAS_LGB:
@@ -571,7 +607,7 @@ def train_all(tickers: list[str], train_end: str = "",
                                  dtr, num_boost_round=n_rounds)
                 return lm.predict(Xval)
             meta_cols.append(get_oof_predictions(X_raw, y, lgb_train_fn,
-                                                 dates=dates_arr))
+                                                 dates=dates_arr, purge_days=purge_days))
 
         if HAS_CAT:
             def cat_train_fn(Xtr, ytr, Xval, sw):
@@ -586,7 +622,7 @@ def train_all(tickers: list[str], train_end: str = "",
                 cm.fit(Xtr, ytr, sample_weight=sw)
                 return cm.predict_proba(Xval)[:, 1]
             meta_cols.append(get_oof_predictions(X_raw, y, cat_train_fn,
-                                                 dates=dates_arr))
+                                                 dates=dates_arr, purge_days=purge_days))
 
         meta_X = np.column_stack(meta_cols) if len(meta_cols) > 1 else meta_cols[0].reshape(-1, 1)
 
@@ -655,6 +691,9 @@ def train_all(tickers: list[str], train_end: str = "",
         #  feature_v2 45d / kr_finance_client 90d 로 어긋나 있었다.)
         "cv_time_ordered":     True,
         "cv_scaler_in_fold":   True,
+        # CV 폴드 경계에 라벨 지평선(라벨별 3/5/14일)만큼 purge/embargo 를 적용해
+        # val 직전 train 샘플의 라벨이 val 구간 가격을 물지 않게 한다.
+        "cv_purge_embargo":    True,
         "pit_filing_lag_days": PIT_FILING_LAG_DAYS,
         "data_start":          str(np.min(dates_arr)),
         "data_end":            str(np.max(dates_arr)),

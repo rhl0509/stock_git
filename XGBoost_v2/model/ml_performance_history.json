@@ -1,23 +1,23 @@
 [
   {
-    "trained_at": "2026-07-17T15:59:35.417894",
+    "trained_at": "2026-07-18T11:26:01.668585",
     "n_tickers": 293,
     "n_samples": 489115,
     "n_features": 82,
     "labels": {
       "daily": {
-        "cv_auc": 0.6924,
-        "cv_acc": 0.5599,
+        "cv_auc": 0.6918,
+        "cv_acc": 0.5633,
         "buy_ratio": 0.1078
       },
       "short": {
-        "cv_auc": 0.6567,
-        "cv_acc": 0.5943,
+        "cv_auc": 0.6541,
+        "cv_acc": 0.589,
         "buy_ratio": 0.1171
       },
       "swing": {
-        "cv_auc": 0.5928,
-        "cv_acc": 0.6551,
+        "cv_auc": 0.5929,
+        "cv_acc": 0.644,
         "buy_ratio": 0.1348
       }
     },

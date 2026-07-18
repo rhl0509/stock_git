@@ -1,5 +1,5 @@
 {
-  "trained_at": "2026-07-17T15:59:35.417894",
+  "trained_at": "2026-07-18T11:26:01.668585",
   "train_end": "all",
   "n_tickers": 293,
   "n_samples": 489115,
@@ -7,13 +7,14 @@
   "use_pit": true,
   "cv_time_ordered": true,
   "cv_scaler_in_fold": true,
+  "cv_purge_embargo": true,
   "pit_filing_lag_days": 90,
   "data_start": "2019-05-08T00:00:00.000000000",
   "data_end": "2026-06-26T00:00:00.000000000",
   "labels": {
     "daily": {
-      "cv_auc": 0.6924,
-      "cv_acc": 0.5599,
+      "cv_auc": 0.6918,
+      "cv_acc": 0.5633,
       "buy_ratio": 0.1078,
       "best_params": {
         "objective": "binary:logistic",
@@ -35,30 +36,30 @@
       "has_cat": true,
       "top_features_fscore": [
         {
-          "feature": "ret_1d",
-          "importance": 0.079
+          "feature": "gap_open",
+          "importance": 0.0761
         },
         {
-          "feature": "gap_open",
-          "importance": 0.073
+          "feature": "ret_1d",
+          "importance": 0.0757
         },
         {
           "feature": "cci_20",
-          "importance": 0.063
+          "importance": 0.06
         },
         {
           "feature": "atr_ratio",
-          "importance": 0.0526
+          "importance": 0.0558
         },
         {
           "feature": "stoch_k",
-          "importance": 0.0418
+          "importance": 0.0394
         }
       ]
     },
     "short": {
-      "cv_auc": 0.6567,
-      "cv_acc": 0.5943,
+      "cv_auc": 0.6541,
+      "cv_acc": 0.589,
       "buy_ratio": 0.1171,
       "best_params": {
         "objective": "binary:logistic",
@@ -81,29 +82,29 @@
       "top_features_fscore": [
         {
           "feature": "ret_1d",
-          "importance": 0.0681
+          "importance": 0.0684
         },
         {
           "feature": "gap_open",
-          "importance": 0.0662
+          "importance": 0.067
         },
         {
           "feature": "atr_ratio",
-          "importance": 0.0608
+          "importance": 0.0581
         },
         {
           "feature": "cci_20",
-          "importance": 0.0466
+          "importance": 0.0452
         },
         {
           "feature": "rsi_vs_market",
-          "importance": 0.0399
+          "importance": 0.0381
         }
       ]
     },
     "swing": {
-      "cv_auc": 0.5928,
-      "cv_acc": 0.6551,
+      "cv_auc": 0.5929,
+      "cv_acc": 0.644,
       "buy_ratio": 0.1348,
       "best_params": {
         "objective": "binary:logistic",
@@ -126,23 +127,23 @@
       "top_features_fscore": [
         {
           "feature": "atr_ratio",
-          "importance": 0.0519
+          "importance": 0.0524
         },
         {
           "feature": "rsi_vs_market",
-          "importance": 0.0477
+          "importance": 0.0498
         },
         {
           "feature": "ret_1d",
-          "importance": 0.0449
+          "importance": 0.0448
         },
         {
           "feature": "low52w_pct",
-          "importance": 0.0431
+          "importance": 0.0434
         },
         {
-          "feature": "high52w_pct",
-          "importance": 0.0419
+          "feature": "gap_open",
+          "importance": 0.0416
         }
       ]
     }
