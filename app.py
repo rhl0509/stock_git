@@ -1,6 +1,8 @@
 import sys
 import os
 import logging
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 os.environ['PYTHONIOENCODING'] = 'utf-8'
 if hasattr(sys.stdout, 'reconfigure'):
@@ -8,10 +10,19 @@ if hasattr(sys.stdout, 'reconfigure'):
 if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8')
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-)
+# 콘솔 + 회전 파일. 예전엔 basicConfig 로 콘솔(stderr)에만 찍혀, start_all.bat 의
+# cmd 창을 닫으면 서버·스케줄러·디스패처 로그가 통째로 사라졌다(장애 사후 추적 불가).
+# 회전 파일로 남겨 창과 무관하게 보존한다. daily_pipeline 의 logs/ 규약과 같은 위치.
+_LOG_DIR = Path(__file__).parent / 'logs'
+_LOG_DIR.mkdir(exist_ok=True)
+_log_fmt = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+_file_handler = RotatingFileHandler(
+    _LOG_DIR / 'app.log', maxBytes=10 * 1024 * 1024, backupCount=7, encoding='utf-8')
+_file_handler.setFormatter(_log_fmt)
+_console_handler = logging.StreamHandler()
+_console_handler.setFormatter(_log_fmt)
+logging.basicConfig(level=logging.INFO,
+                    handlers=[_console_handler, _file_handler])
 logger = logging.getLogger('app')
 
 from contextlib import asynccontextmanager
