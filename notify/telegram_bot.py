@@ -85,6 +85,10 @@ def _loop():
     if not token:
         logger.info("[telegram_bot] 토큰 없음 — 양방향 폴링 비활성화")
         return
+    if not auth_chat:
+        # fail-closed: 인가 chat 미설정 상태로 폴링하면 아무나 명령 가능
+        logger.warning("[telegram_bot] TELEGRAM_CHAT_ID 미설정 — 양방향 폴링 시작 거부 (fail-closed)")
+        return
     logger.info("[telegram_bot] 양방향 챗봇 폴링 시작")
 
     # 시작 시 그동안 쌓인 과거 메시지는 건너뛴다(재시작 시 폭주 방지)
@@ -110,8 +114,9 @@ def _loop():
                 text = msg.get("text") or ""
                 if not text:
                     continue
-                # 인가된 소유자만 응답 (API 비용·보안)
-                if auth_chat and cid != auth_chat:
+                # 인가된 소유자만 응답 (API 비용·보안) — fail-closed:
+                # 인가 chat 미설정이거나 불일치면 무조건 거부
+                if not auth_chat or cid != auth_chat:
                     logger.warning(f"[telegram_bot] 미인가 chat {cid} 무시")
                     continue
                 try:
@@ -137,6 +142,10 @@ def start_polling():
         return
     if not _load_token("TELEGRAM_BOT_TOKEN"):
         logger.info("[telegram_bot] TELEGRAM_BOT_TOKEN 미설정 — 양방향 챗봇 비활성화")
+        return
+    if not str(_load_token("TELEGRAM_CHAT_ID") or ""):
+        # fail-closed: 인가 chat 없이 폴링을 시작하면 모든 chat의 명령이 처리될 수 있음
+        logger.warning("[telegram_bot] TELEGRAM_CHAT_ID 미설정 — 양방향 챗봇을 시작하지 않습니다 (fail-closed)")
         return
     _started = True
     threading.Thread(target=_loop, name="telegram_bot", daemon=True).start()

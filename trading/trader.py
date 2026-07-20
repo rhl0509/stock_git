@@ -33,6 +33,17 @@ logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# ⛔ 실매매(주문 대행) 영구 차단 — 하드코딩
+# ─────────────────────────────────────────────────────────────────────────────
+# 이 서비스는 정보 제공(시세·분석·추천)만 한다. 운영자 본인 계좌라도 이 프로세스가
+# 사용자 트래픽 위에서 자동으로 실주문을 내보내면 안 된다. 타인 자금을 받아 대신
+# 주문하는 행위는 '투자일임업' 인가 대상이라 무인가 시 위법이다.
+# 따라서 어떤 환경변수·설정으로도 우회할 수 없게, 실주문 송신 경로를 코드 차원에서
+# 영구히 막는다. (env가 아니라 상수 — 운영 중 실수로 켜지는 것 방지)
+LIVE_ORDER_EXECUTION_DISABLED = True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 리스크 설정 (환경변수 또는 직접 수정)
 # ─────────────────────────────────────────────────────────────────────────────
 class RiskConfig:
@@ -204,42 +215,19 @@ class Trader:
     def _send_order(self, ticker: str, order_type: str,
                     quantity: int, price: int = 0) -> bool:
         """
-        키움 SendOrder TR 실행.
+        ⛔ 실주문 송신 — 영구 차단됨.
 
-        order_type : "매수" | "매도"
-        price      : 0 이면 시장가
-
-        kiwoom_worker.py 에 send_order() 구현 필요:
-          kiwoom.send_order(ticker, order_type, quantity, price)
-          → True/False
-
-        미구현 시 로그만 출력하고 True 반환 (모의 실행).
+        모든 실매수/실매도는 이 단일 지점을 통과한다. 주문 대행(투자일임)을
+        막기 위해, 여기서 무조건 거부하고 외부 증권사 API(키움 SendOrder, KIS
+        주문 등)를 절대 호출하지 않는다. LIVE_ORDER_EXECUTION_DISABLED 상수로
+        하드코딩되어 있어 환경변수로 우회할 수 없다.
         """
-        kiwoom = self._get_kiwoom()
-        if kiwoom is None:
-            return False
-
-        try:
-            if hasattr(kiwoom, 'send_order'):
-                result = kiwoom.send_order(
-                    code=ticker,
-                    order_type=order_type,    # "매수" | "매도"
-                    quantity=quantity,
-                    price=price,              # 0 = 시장가
-                )
-                return bool(result)
-            else:
-                # send_order 미구현 → 모의 실행 (dry-run)
-                logger.warning(
-                    f"[Trader] kiwoom.send_order() 미구현 → 모의 실행\n"
-                    f"  {order_type} {ticker} {quantity}주 @"
-                    f"{'시장가' if price == 0 else price}원\n"
-                    f"  kiwoom_worker.py 에 SendOrder TR 추가 필요"
-                )
-                return True   # 모의 실행은 성공으로 처리
-        except Exception as e:
-            logger.error(f"[Trader] 주문 실패 ({ticker} {order_type}): {e}")
-            return False
+        logger.error(
+            "[Trader] ⛔ 실주문 차단: %s %s %s주 @%s — 이 서비스는 정보 제공만 하며 "
+            "주문 대행(투자일임)은 영구 비활성화되어 있습니다.",
+            order_type, ticker, quantity, "시장가" if price == 0 else price,
+        )
+        return False
 
     # ──────────────────────────────────────────────────────────────
     # 사전 검증
@@ -357,6 +345,15 @@ class Trader:
             current_price: 현재가
             prob_buy     : 매수 확률 (signal.py 출력)
         """
+        # ── ⛔ 실매매(주문 대행) 영구 차단 ──────────────────────────────
+        if LIVE_ORDER_EXECUTION_DISABLED:
+            return OrderResult(
+                success=False, action="BLOCKED",
+                ticker=ticker, ticker_name=ticker_name,
+                price=current_price,
+                reason="실매매 비활성화 — 주문 대행(투자일임) 금지. 정보 제공만 제공합니다.",
+            )
+
         # ── 중복 보유 차단 ──────────────────────────────────────────────
         if ticker in self._positions:
             return OrderResult(
@@ -448,6 +445,15 @@ class Trader:
             current_price: 현재가
             reason       : 매도 사유 (손절/익절/신호)
         """
+        # ── ⛔ 실매매(주문 대행) 영구 차단 ──────────────────────────────
+        if LIVE_ORDER_EXECUTION_DISABLED:
+            return OrderResult(
+                success=False, action="BLOCKED",
+                ticker=ticker, ticker_name=pos.ticker_name,
+                quantity=pos.quantity, price=current_price,
+                reason="실매매 비활성화 — 주문 대행(투자일임) 금지. 정보 제공만 제공합니다.",
+            )
+
         if self.config.ORDER_TYPE == "시장가":
             order_price = 0
         else:

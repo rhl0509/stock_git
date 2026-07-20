@@ -175,13 +175,15 @@ def _should_notify(job_id: str, channel: str) -> bool:
     try:
         from database.db_connection import get_db_connection
         conn = get_db_connection()
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT enabled FROM agent_notify_settings WHERE job_id=%s AND channel=%s",
-                (job_id, channel),
-            )
-            row = cur.fetchone()
-        conn.close()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT enabled FROM agent_notify_settings WHERE job_id=%s AND channel=%s",
+                    (job_id, channel),
+                )
+                row = cur.fetchone()
+        finally:
+            conn.close()
         if row is not None:
             return bool(row['enabled'])
     except Exception:

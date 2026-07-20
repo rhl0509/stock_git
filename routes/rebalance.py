@@ -1,9 +1,9 @@
 """routes/rebalance.py — 리밸런싱 목표 비중 + 이메일 설정 API."""
 import logging
 from decimal import Decimal
-from fastapi import APIRouter, Request, Body
+from fastapi import APIRouter, Request, Body, Depends
 from fastapi.responses import JSONResponse
-from routes.utils import get_login_user, login_required_response
+from routes.utils import get_login_user, login_required_response, require_owner
 from database.db_connection import get_db_connection
 
 router = APIRouter()
@@ -111,7 +111,7 @@ def delete_target(stock_code: str, request: Request):
 
 # ── 이메일 설정 ──────────────────────────────────────────────────
 
-@router.get('/api/settings/email')
+@router.get('/api/settings/email', dependencies=[Depends(require_owner)])
 def get_email_config(request: Request):
     user = get_login_user(request)
     if not user:
@@ -132,7 +132,7 @@ def get_email_config(request: Request):
         conn.close()
 
 
-@router.post('/api/settings/email')
+@router.post('/api/settings/email', dependencies=[Depends(require_owner)])
 def save_email_config(request: Request, body: dict = Body(default={})):
     user = get_login_user(request)
     if not user:
@@ -166,7 +166,7 @@ def save_email_config(request: Request, body: dict = Body(default={})):
         conn.close()
 
 
-@router.post('/api/settings/email/test')
+@router.post('/api/settings/email/test', dependencies=[Depends(require_owner)])
 def test_email(request: Request):
     user = get_login_user(request)
     if not user:

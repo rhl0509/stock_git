@@ -640,7 +640,7 @@ def _fetch_naver_news(code, limit=5):
 def _fetch_kiwoom(code):
     try:
         from kiwoom_client import kiwoom
-        if kiwoom.get_login_state() != 1: return {}
+        if not kiwoom.market_data_ready(): return {}
         return kiwoom.get_best_price(code) or {}
     except Exception as e:
         print(f"[Advisor] 키움 오류: {e}")

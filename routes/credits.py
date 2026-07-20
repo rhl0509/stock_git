@@ -214,6 +214,26 @@ def deduct_credits(user_no: int, amount: int, memo: str = '') -> dict:
         conn.close()
 
 
+def refund_credits(user_no: int, amount: int, memo: str = '') -> dict:
+    """선차감(deduct_credits) 후 작업이 실패했을 때 크레딧을 되돌린다(charge-back).
+    반환: {ok: bool, balance: int, error?: str}."""
+    if amount <= 0:
+        return {"ok": True, "balance": None}
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT balance FROM user_credits WHERE user_no=%s FOR UPDATE", (user_no,))
+            new_bal = _apply_delta(cur, user_no, 'charge', amount, None, memo or "작업 실패 환불")
+        conn.commit()
+        return {"ok": True, "balance": new_bal}
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"[credits/refund_credits] user={user_no} amount={amount}: {e}", exc_info=True)
+        return {"ok": False, "balance": None, "error": "환불 중 오류"}
+    finally:
+        conn.close()
+
+
 @router.get('/api/credits/balance')
 def get_balance(request: Request):
     if 'user_no' not in request.session:

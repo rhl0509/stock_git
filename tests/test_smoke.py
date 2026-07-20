@@ -7,11 +7,14 @@ import pytest
 # ─────────────────────────────────────────────────────────────────
 # 1. 인증 커버리지: 의존성도 내부 세션체크도 없는 라우트 금지
 # ─────────────────────────────────────────────────────────────────
-AUTH_FNS  = {"require_login", "api_require_login", "require_login_smart"}
+AUTH_FNS  = {"require_login", "api_require_login", "require_login_smart", "require_owner"}
+# 세션이 아닌 자체 인증(서명/일회용 토큰)으로 보호되는 의도된 공개 엔드포인트.
 PUBLIC_OK = {"/login", "/register", "/find-account", "/", "/health", "/{full_path:path}",
              "/auth/login", "/auth/register", "/auth/logout", "/auth/find-account",
              "/auth/find-id", "/auth/find-password", "/auth/me", "/auth/api/me",
-             "/auth/update-profile", "/auth/profile", "/auth/change-password"}
+             "/auth/update-profile", "/auth/profile", "/auth/change-password",
+             "/auth/reset-password",      # 일회용 재설정 토큰(해시+만료) + IP 레이트리밋
+             "/api/credits/webhook"}      # PortOne 웹훅 서명 검증
 
 
 def test_no_unprotected_routes(client):
@@ -66,7 +69,8 @@ def test_profile_contract(auth_client):
     assert r.status_code == 200
     assert r.json()["user_id"] == "pytest_smoke_user"
 
-    r = auth_client.put("/auth/profile", json={"name": "pytest2", "email": "pytest@smoke.local"})
+    r = auth_client.put("/auth/profile", json={"name": "pytest2", "email": "pytest@smoke.local",
+                                                "phone": "010-1234-5678"})
     assert r.status_code == 200
 
     # 빈 이메일 덮어쓰기 거부 (과거 버그)

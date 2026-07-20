@@ -65,6 +65,7 @@ def auth_client(client):
     r = client.post("/auth/register", json={
         "user_id": TEST_USER, "password": TEST_PW,
         "name": "pytest", "email": "pytest@smoke.local",
+        "phone": "010-1234-5678",
     })
     assert r.status_code == 201, f"register 실패: {r.text}"
     r = client.post("/auth/login", json={"user_id": TEST_USER, "password": TEST_PW})

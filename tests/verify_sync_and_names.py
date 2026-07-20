@@ -12,12 +12,19 @@
 
 실행: d:/expense_tracker/.venv64/Scripts/python.exe -m tests.verify_sync_and_names
 """
+import os
 import sys
 from datetime import datetime, timedelta
 
 sys.stdout.reconfigure(encoding='utf-8')
 
 TEST_UID = 990277  # 실DB 충돌 방지용 합성 member_id
+
+# 소유자 게이트: do_kiwoom_sync 는 is_owner_user_no(user_no) 로 지정 소유자만 허용한다
+# (자동 탐지 제거·fail-closed 하드닝 이후). 이 검증은 합성 유저로 sync 를 호출하므로
+# TEST_UID 를 이번 프로세스의 지정 소유자로 설정한다. get_owner_user_no() 는 매 호출 시
+# env 를 읽으므로 import 전에 setdefault 해두면 충분하다.
+os.environ.setdefault('OWNER_USER_NO', str(TEST_UID))
 
 
 def _clean(conn, uid):
@@ -123,8 +130,16 @@ def test_recommend_name_override():
     print(f"  [2a] OK — 종목명 교정: 096530→{dbmap['096530']}, "
           f"000670→{dbmap['000670']}, 068760→{dbmap['068760']}")
 
-    # 실제 서빙 경로(recommend_json)의 모든 항목이 DB 이름과 일치하는지
-    res = recommend_json()
+    # 실제 서빙 경로(recommend_json)의 모든 항목이 DB 이름과 일치하는지.
+    # recommend_json 은 이제 AI 추천 데이 패스(_pass_gate)로 보호되므로, 종목명 교정
+    # 로직만 검증하기 위해 이 검증 동안에는 게이트를 우회한다.
+    import routes.recommend as _rec
+    _orig_gate = _rec._pass_gate
+    _rec._pass_gate = lambda request=None: None
+    try:
+        res = recommend_json(None)
+    finally:
+        _rec._pass_gate = _orig_gate
     if isinstance(res, dict) and res.get('ok'):
         all_codes = set()
         for sec in ('triple', 'daily', 'short', 'swing'):

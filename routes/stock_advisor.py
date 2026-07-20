@@ -312,10 +312,11 @@ def analyze_stock(request: Request, body: dict = Body(default={})):
     user_no = request.session['user_no']
     cost = Config.ADVISOR_CREDIT_COST
 
-    # 1) 호출 전 잔액 확인 — 부족하면 데이터 수집/Claude 호출 자체를 안 함
-    from routes.credits import get_balance_value, deduct_credits
-    bal = get_balance_value(user_no)
-    if bal < cost:
+    # 1) 선차감(원자적) — 동시 요청이 와도 한 건만 통과, 나머지는 여기서 막혀 데이터 수집/Claude 호출을 안 함.
+    from routes.credits import deduct_credits, refund_credits
+    d = deduct_credits(user_no, cost, memo=f"AI 종목분석 {name}({code})")
+    if not d.get("ok"):
+        bal = d.get("balance")
         return JSONResponse(
             {"error": f"크레딧이 부족합니다. (필요 {cost:,}C / 보유 {bal:,}C) "
                       f"내 정보 → 크레딧/충전에서 충전해 주세요.",
@@ -327,19 +328,19 @@ def analyze_stock(request: Request, body: dict = Body(default={})):
     yf = r['yf']
 
     if not kw and not yf:
+        refund_credits(user_no, cost, memo=f"AI 종목분석 데이터 수집 실패 환불 ({code})")
         return JSONResponse({"error": "데이터 수집 실패. 키움 API 연결을 확인하세요."}, status_code=500)
 
-    # 2) Claude 호출 (실패 시 차감하지 않음)
+    # 2) Claude 호출 (실패 시 선차감분을 환불)
     try:
         analysis = _call_claude(
             _build_prompt(name, code, kw, yf,
                           r['dart'], r['kis'], r['bok'], r['consensus'], r['ml'], ui, r.get('short', {}))
         )
     except Exception as e:
+        refund_credits(user_no, cost, memo=f"AI 종목분석 호출 실패 환불 ({code})")
         return JSONResponse({"error": f"AI 분석 실패: {e}"}, status_code=500)
 
-    # 3) 성공 후 고정 차감
-    d = deduct_credits(user_no, cost, memo=f"AI 종목분석 {name}({code})")
     new_bal = d.get("balance")
 
     return {

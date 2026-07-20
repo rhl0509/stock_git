@@ -24,8 +24,8 @@ def _require_kiwoom():
     """키움 미접속이면 RuntimeError. 현재가/실현손익 액션의 조용한 평단가 폴백을
     명시적 실패로 전환해 예약 실행 실패 알림이 발동되도록 한다."""
     from kiwoom_client import kiwoom
-    if kiwoom.get_login_state() != 1:
-        raise RuntimeError('키움 미접속 — 32비트 콜렉터/로그인 상태 확인 필요')
+    if not kiwoom.market_data_ready():
+        raise RuntimeError('시세 소스 없음(키움 콜렉터/KIS 모두 불가) — 연결 상태 확인 필요')
 
 
 # ══════════════════════════════════════════════════════════════════

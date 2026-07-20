@@ -49,14 +49,16 @@ def _build_watchlist() -> list[tuple[str, str]]:
     try:
         from database.db_connection import get_db_connection
         conn = get_db_connection()
-        with conn.cursor() as cur:
-            cur.execute("SELECT DISTINCT code, name FROM stock_holdings")
-            for row in (cur.fetchall() or []):
-                ticker = row["code"] + ".KS"
-                if ticker not in seen:
-                    tickers.append((ticker, row["name"]))
-                    seen.add(ticker)
-        conn.close()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT DISTINCT code, name FROM stock_holdings")
+                for row in (cur.fetchall() or []):
+                    ticker = row["code"] + ".KS"
+                    if ticker not in seen:
+                        tickers.append((ticker, row["name"]))
+                        seen.add(ticker)
+        finally:
+            conn.close()
     except Exception:
         pass
     return tickers
@@ -135,23 +137,25 @@ def _save_results(anomalies: list[dict], explanation: str):
         from database.db_connection import get_db_connection
         now  = datetime.now()
         conn = get_db_connection()
-        with conn.cursor() as cur:
-            for a in anomalies:
-                cur.execute(
-                    """INSERT INTO agent_anomaly_results
-                       (detected_at, ticker, name, price, price_chg, vol_ratio, signals, explanation)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-                    (
-                        now, a['ticker'], a['name'],
-                        round(a['price'], 2),
-                        round(a['price_chg'], 4),
-                        round(a['vol_ratio'], 4),
-                        ', '.join(a['signals']),
-                        (explanation or '')[:2000],
-                    ),
-                )
-            conn.commit()
-        conn.close()
+        try:
+            with conn.cursor() as cur:
+                for a in anomalies:
+                    cur.execute(
+                        """INSERT INTO agent_anomaly_results
+                           (detected_at, ticker, name, price, price_chg, vol_ratio, signals, explanation)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                        (
+                            now, a['ticker'], a['name'],
+                            round(a['price'], 2),
+                            round(a['price_chg'], 4),
+                            round(a['vol_ratio'], 4),
+                            ', '.join(a['signals']),
+                            (explanation or '')[:2000],
+                        ),
+                    )
+                conn.commit()
+        finally:
+            conn.close()
     except Exception as e:
         logger.warning(f"[anomaly] DB 저장 실패: {e}")
 

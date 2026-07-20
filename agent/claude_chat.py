@@ -49,16 +49,17 @@ def chat(message: str, user_no: int) -> dict:
 
     cost = Config.CHAT_CREDIT_COST
 
-    # 1) 호출 전 잔액 확인 — 부족하면 Claude 호출 자체를 안 함
-    from routes.credits import get_balance_value
-    bal = get_balance_value(user_no)
-    if bal < cost:
+    # 1) 선차감(원자적) — 동시 요청이 와도 한 건만 통과, 나머지는 여기서 막혀 Claude 호출 자체를 안 함.
+    from routes.credits import deduct_credits, refund_credits
+    d = deduct_credits(user_no, cost, memo="AI 챗봇 1회")
+    if not d.get("ok"):
+        bal = d.get("balance")
         return {"ok": False,
                 "error": f"크레딧이 부족합니다. (필요 {cost:,}C / 보유 {bal:,}C)\n"
                          f"내 정보 → 크레딧/충전에서 충전해 주세요.",
                 "cost": cost, "balance": bal}
 
-    # 2) Claude 호출 (실패 시 차감하지 않음)
+    # 2) Claude 호출 (실패·빈 답변이면 선차감분을 환불)
     try:
         import anthropic
         client = anthropic.Anthropic(api_key=Config.ANTHROPIC_API_KEY)
@@ -72,13 +73,11 @@ def chat(message: str, user_no: int) -> dict:
             block.text for block in resp.content if getattr(block, "type", None) == "text"
         ).strip()
         if not answer:
+            refund_credits(user_no, cost, memo="AI 챗봇 빈 답변 환불")
             return {"ok": False, "error": "답변을 생성하지 못했습니다. 다시 시도해 주세요."}
     except Exception as e:
         logger.error(f"[claude_chat] Claude 호출 오류: {e}", exc_info=True)
+        refund_credits(user_no, cost, memo="AI 챗봇 호출 실패 환불")
         return {"ok": False, "error": "일시적인 오류로 답변을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요."}
 
-    # 3) 성공 후 고정 차감
-    from routes.credits import deduct_credits
-    d = deduct_credits(user_no, cost, memo="AI 챗봇 1회")
-    new_bal = d.get("balance")
-    return {"ok": True, "answer": answer, "cost": cost, "balance": new_bal}
+    return {"ok": True, "answer": answer, "cost": cost, "balance": d.get("balance")}

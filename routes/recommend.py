@@ -84,6 +84,9 @@ def recommend_json(request: Request):
 
 @router.get('/recommend/category/{category}')
 def recommend_category(category: str, request: Request):
+    gate = _pass_gate(request)
+    if gate is not None:
+        return gate
     if category not in ("daily", "short", "swing", "all"):
         return JSONResponse({"ok": False, "error": "invalid category"}, status_code=400)
 
@@ -111,6 +114,9 @@ def recommend_category(category: str, request: Request):
 
 @router.get('/recommend/stock/{code}')
 def recommend_stock(code: str, request: Request):
+    gate = _pass_gate(request)
+    if gate is not None:
+        return gate
     try:
         from XGBoost_v2.predict_v2 import predict_ticker
         name   = request.query_params.get('name', '')
