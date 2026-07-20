@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../api/index.js';
+import { setToken, clearToken } from '../api/token.js';
 
 const AuthContext = createContext(null);
 
@@ -15,7 +16,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = async (user_id, password) => {
-    await api.post('/auth/login', { user_id, password });
+    const res = await api.post('/auth/login', { user_id, password });
+    if (res.data?.token) setToken(res.data.token);   // 모바일 앱용 Bearer 토큰 저장
     const me = await api.get('/auth/me');
     setUser(me.data);
     // return 없음 — 성공 시 undefined 반환
@@ -23,6 +25,7 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     try { await api.post('/auth/logout', {}); } catch {}
+    clearToken();
     setUser(null);
   };
 

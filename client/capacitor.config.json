@@ -1,0 +1,5 @@
+{
+  "appId": "com.gagye.stock",
+  "appName": "GAGYE 주식",
+  "webDir": "../static/spa"
+}

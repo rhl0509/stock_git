@@ -9,6 +9,7 @@ from werkzeug.security import generate_password_hash, check_password_hash as _we
 from database.db_connection import get_db_connection
 from templates_config import render
 from config import Config
+from auth_token import make_token
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -150,7 +151,23 @@ def login(request: Request, data: dict = Body(default={})):
                 request.session['user_id']   = user['user_id']
                 request.session['user_name'] = user['name']
                 request.session['role']      = user.get('role') or 'free'
-                return JSONResponse({"message": "로그인 성공"}, status_code=200)
+                # 모바일/Capacitor 앱용 Bearer 토큰(웹은 세션 쿠키 사용, 토큰은 무시해도 됨)
+                token = make_token(
+                    user['id'], user['user_id'], user['name'], user.get('role') or 'free'
+                )
+                return JSONResponse(
+                    {
+                        "message": "로그인 성공",
+                        "token": token,
+                        "user": {
+                            "user_no":   user['id'],
+                            "user_id":   user['user_id'],
+                            "user_name": user['name'],
+                            "role":      user.get('role') or 'free',
+                        },
+                    },
+                    status_code=200,
+                )
             else:
                 return JSONResponse({"error": "아이디 또는 비밀번호가 틀립니다."}, status_code=401)
     except Exception as e:
@@ -523,7 +540,9 @@ def reset_password(request: Request, data: dict = Body(default={})):
 
 @router.post('/find-account')
 def find_account_post(request: Request, data: dict = Body(default={})):
-    """이메일로 계정 존재 여부 확인 — user_id는 절대 평문 반환하지 않음."""
+    """이메일로 아이디 힌트 안내 — 계정 열거 방지를 위해 존재 여부와 무관하게
+    동일한 응답을 반환한다 (find-password 와 동일 패턴). 힌트는 응답이 아니라
+    등록 이메일로만 발송한다."""
     client_ip = request.client.host if request.client else 'unknown'
     if _is_rate_limited(f"find:{client_ip}"):
         return JSONResponse({"error": "요청 횟수 초과. 잠시 후 다시 시도하세요."}, status_code=429)
@@ -531,22 +550,34 @@ def find_account_post(request: Request, data: dict = Body(default={})):
     email = data.get('email', '').strip()
     if not email or '@' not in email:
         return JSONResponse({"error": "유효한 이메일을 입력해주세요."}, status_code=400)
+
+    # 존재 여부와 무관하게 동일하게 응답 (계정 열거 방지)
+    generic_ok = JSONResponse({
+        "message": "해당 이메일로 가입된 계정이 있다면 아이디 안내 메일을 보냈습니다. "
+                   "메일함을 확인해주세요."
+    })
+
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
             cursor.execute("SELECT user_id FROM members WHERE email=%s", (email,))
             row = cursor.fetchone()
-        if row:
-            uid    = row['user_id']
-            # 앞 2자 + 마스킹 + 마지막 1자 힌트만 제공
-            if len(uid) > 3:
-                masked = uid[:2] + '*' * (len(uid) - 3) + uid[-1]
-            else:
-                masked = uid[0] + '*' * (len(uid) - 1)
-            return JSONResponse({"found": True, "hint": masked})
-        return JSONResponse({"error": "해당 이메일로 가입된 계정이 없습니다."}, status_code=404)
     except Exception as e:
         logger.error(f"[auth/find-account] {e}", exc_info=True)
         return JSONResponse({"error": "서버 오류가 발생했습니다."}, status_code=500)
     finally:
         conn.close()
+
+    if row:
+        try:
+            from notify.email_send import send_email_to
+            sent = send_email_to(
+                email, "[GAGYE] 아이디 찾기 안내",
+                f"회원님의 아이디 힌트: {_mask_user_id(row['user_id'])}\n"
+                "본인이 요청하지 않았다면 이 메일을 무시하세요.")
+            if not sent:
+                # 발송 실패는 서버 로그로만 남기고 응답은 동일 유지(열거/설정상태 노출 방지)
+                logger.error("[auth/find-account] 안내 메일 발송 실패 (SMTP 설정 확인 필요)")
+        except Exception as e:
+            logger.error(f"[auth/find-account] 메일 발송 오류: {e}", exc_info=True)
+    return generic_ok

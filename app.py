@@ -30,8 +30,10 @@ from fastapi import FastAPI, Request, Depends
 from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.cors import CORSMiddleware
 
 from config import Config
+from auth_token import BearerAuthMiddleware
 from templates_config import render
 from routes.utils import require_login, LoginRequired, ApiLoginRequired, OwnerOnly
 from routes.tier import TierRequired
@@ -89,6 +91,11 @@ async def _lifespan(app: FastAPI):
 app = FastAPI(lifespan=_lifespan)
 
 # ── 미들웨어 ──
+# 등록 순서 주의: add_middleware 는 가장 바깥(outermost)에 쌓인다.
+# BearerAuth 가 scope['session'] 을 보려면 SessionMiddleware 보다 안쪽이어야 하므로
+# BearerAuth 를 '먼저' 등록한다(먼저 등록=더 안쪽). 모바일 앱은 Bearer 토큰,
+# 웹은 쿠키 세션으로 인증(하위호환).
+app.add_middleware(BearerAuthMiddleware)
 # https_only=False: 현재 로컬 HTTP 운영. 외부 노출(리버스 프록시/HTTPS) 시 True로 변경할 것.
 app.add_middleware(
     SessionMiddleware,
@@ -96,6 +103,22 @@ app.add_middleware(
     max_age=60 * 60 * 24 * 7,  # 7일
     same_site="lax",
     https_only=False,
+)
+
+# CORS: Capacitor 앱 WebView 오리진 허용(웹은 동일 오리진이라 무관).
+#   iOS = capacitor://localhost, 안드 = http://localhost, vite dev = http://localhost:5173.
+#   add_middleware 는 마지막 등록이 가장 바깥(outermost)이라 preflight 를 먼저 처리한다.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "capacitor://localhost",
+        "http://localhost",
+        "https://localhost",
+        "http://localhost:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # ── 정적 파일 ──

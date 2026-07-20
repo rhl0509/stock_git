@@ -95,7 +95,7 @@ export default function App() {
               <Route path="/stock_filter"       element={<ProtectedRoute><StockFilter /></ProtectedRoute>} />
               <Route path="/stock_theme_filter" element={<ProtectedRoute><StockThemeFilter /></ProtectedRoute>} />
               <Route path="/recommend"          element={<ProtectedRoute><Recommend /></ProtectedRoute>} />
-              <Route path="/recommend_abs"      element={<ProtectedRoute><Recommend /></ProtectedRoute>} />
+              <Route path="/recommend_abs"      element={<ProtectedRoute><RecommendAbs /></ProtectedRoute>} />
               <Route path="/stock_ai_performance" element={<Navigate to="/train_report" replace />} />
               <Route path="/backtest"           element={<ProtectedRoute><Backtest /></ProtectedRoute>} />
               <Route path="/quant"              element={<ProtectedRoute><Quant /></ProtectedRoute>} />
