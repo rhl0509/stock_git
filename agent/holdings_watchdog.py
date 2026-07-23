@@ -20,7 +20,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:5001")
+APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8030")
 
 # 룰 기반 즉시 경보 — 오탐이 있어도 미탐보다 낫다
 CRITICAL_KEYWORDS = (

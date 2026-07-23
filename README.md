@@ -65,11 +65,11 @@ pip install -r requirements.txt
 # 3) 프론트 빌드
 cd client && npm install && npm run build && cd ..
 
-# 4) 실행 (.env의 PORT 사용, 기본 5099)
+# 4) 실행 (.env의 PORT 사용, 기본 8030)
 python app.py
 ```
 
-DB 테이블은 앱 기동 시 자동 생성된다. 기동 후 `http://localhost:5099` 접속.
+DB 테이블은 앱 기동 시 자동 생성된다. 기동 후 `http://localhost:8030` 접속.
 상세 배포 절차(스케줄러, HTTPS, 결제 모드 등)는 **[DEPLOY.md](DEPLOY.md)** 참고.
 
 ---

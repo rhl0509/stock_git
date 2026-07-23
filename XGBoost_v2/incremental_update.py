@@ -168,7 +168,7 @@ def run_incremental() -> bool:
             now = datetime.now().strftime("%m/%d %H:%M")
             send_message_to_self(
                 f"🔄 [{now}] 모델 미세조정 완료\n라벨: {', '.join(updated)}\n+{INCREMENTAL_ROUNDS} rounds",
-                link_url="http://localhost:5000/stock_train_report"
+                link_url="http://localhost:8030/stock_train_report"
             )
         except Exception:
             pass

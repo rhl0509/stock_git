@@ -23,7 +23,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:5001")
+APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8030")
 ROOT = Path(__file__).parent.parent
 TRAIN_REPORT = ROOT / "XGBoost_v2" / "model" / "train_report_v2.json"
 

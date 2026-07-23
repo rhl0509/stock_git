@@ -1,6 +1,6 @@
-# 배포 가이드 (5099 / D:\stock_git)
+# 배포 가이드 (8030 / D:\stock_git)
 
-주식 시장 대시보드(FastAPI + React SPA + MySQL) 배포 절차. 포트 **5099**, 단일 프로세스 운영 기준.
+주식 시장 대시보드(FastAPI + React SPA + MySQL) 배포 절차. 포트 **8030**, 단일 프로세스 운영 기준.
 
 ---
 
@@ -43,7 +43,7 @@ cp .env.example .env
 |---|---|
 | `SECRET_KEY` | 세션 서명 키. 없으면 기동 시 예외. `python -c "import secrets; print(secrets.token_hex(32))"` |
 | `DB_HOST` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` | MySQL 접속 정보 |
-| `PORT` | `5099` |
+| `PORT` | `8030` |
 | `APP_BASE_URL` | 비밀번호 재설정 메일 링크 베이스. **운영 공인 도메인으로 변경** |
 | `RUN_SCHEDULER` | 단일 프로세스 배포는 `true` (멀티 워커면 `false` + 별도 스케줄러 프로세스) |
 
@@ -98,7 +98,7 @@ python app.py
 또는 직접 uvicorn:
 
 ```bash
-uvicorn app:app --host 127.0.0.1 --port 5099
+uvicorn app:app --host 127.0.0.1 --port 8030
 ```
 
 - `reload=False` 고정 → **Python 코드 변경은 재시작해야 반영**된다.
@@ -129,7 +129,7 @@ uvicorn app:app --host 127.0.0.1 --port 5099
   **agent 15종**: 보고서(일/주/월)·성과추적·이상감지·공시요약·수급·갭리스크·
   사이드카(장중 매분)·실적·리밸런싱·워치독·드리프트·자동손절 (agent/scheduler.py:register).
 
-  > 이 복사본(5099)은 원본(5001)과 같은 DB(stock_stack)를 공유하므로, 스케줄러를 켠 채
+  > 이 복사본(8030)은 원본(5001)과 같은 DB(stock_stack)를 공유하므로, 스케줄러를 켠 채
   > 둘 다 띄우면 알림·백업이 이중 발사된다. start_all.bat 은 `RUN_SCHEDULER=false` 로
   > 이를 막는다 — 배치를 거치지 않고 `python app.py` 로 직접 띄우지 말 것.
 
@@ -138,8 +138,8 @@ uvicorn app:app --host 127.0.0.1 --port 5099
 ## 7. 헬스 체크
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5099/                       # 302 (로그인 리다이렉트)
-curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5099/api/recommend-pass/status   # 401 (미인증)
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8030/                       # 302 (로그인 리다이렉트)
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8030/api/recommend-pass/status   # 401 (미인증)
 ```
 
 302/401이 나오면 정상 기동. 스케줄러 상태는 로그에서 `[SCHEDULER]` 라인으로 확인.
@@ -154,9 +154,9 @@ curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5099/api/recommend-pass/
 |---|---|---|
 | `app.py` SessionMiddleware | `https_only=False`, `same_site="lax"` | `https_only=True` |
 | `app.py:375` host | `127.0.0.1` | 같은 호스트 프록시면 유지, 직접 노출 시 `0.0.0.0` |
-| `.env` `APP_BASE_URL` | `http://localhost:5099` | 공인 도메인(`https://...`) |
+| `.env` `APP_BASE_URL` | `http://localhost:8030` | 공인 도메인(`https://...`) |
 
-> 같은 호스트에서 리버스 프록시가 5099로 프록시하는 구성이면 `127.0.0.1` 유지가 더 안전하다.
+> 같은 호스트에서 리버스 프록시가 8030로 프록시하는 구성이면 `127.0.0.1` 유지가 더 안전하다.
 
 ---
 

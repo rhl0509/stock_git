@@ -177,7 +177,7 @@ def notify_error(context: str, error: str) -> None:
     try:
         now = datetime.now().strftime("%m/%d %H:%M")
         msg = f"🚨 [{now}] 에러 발생\n\n📍 {context}\n\n{str(error)[:300]}"
-        send_message_to_self(msg, link_url="http://localhost:5000")
+        send_message_to_self(msg, link_url="http://localhost:8030")
     except Exception:
         pass
 
@@ -188,7 +188,7 @@ def notify_error(context: str, error: str) -> None:
 AI_DISCLAIMER = "⚠ AI 분석 · 참고용 · 투자 판단과 책임은 본인에게 있습니다"
 
 
-def send_message_to_self(text: str, link_url: str = "http://localhost:5000/recommend",
+def send_message_to_self(text: str, link_url: str = "http://localhost:8030/recommend",
                          ai_generated: bool = False) -> bool:
     """자기 자신에게 알림 발송. 기본 채널은 텔레그램(NOTIFY_CHANNEL=telegram).
     카카오 '나에게 보내기'는 알림 푸시가 오지 않아 텔레그램으로 전환됨.

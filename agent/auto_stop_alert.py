@@ -25,7 +25,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:5001")
+APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8030")
 ROOT        = Path(__file__).parent.parent
 MODEL_DIR   = ROOT / "XGBoost_v2" / "model"
 HISTORY_DIR = MODEL_DIR / "recommend_history"

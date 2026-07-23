@@ -45,7 +45,7 @@ RECOMMEND_JSON = ROOT / "XGBoost_v2" / "model" / "daily_recommend.json"
 PAPER_TRADES_JSON = ROOT / "XGBoost_v2" / "model" / "paper_trades.json"
 
 # 카카오 링크 등에 쓸 베이스 URL (localhost가 모바일에서 안 열리는 문제 방지)
-APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:5001")
+APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8030")
 
 
 # ─────────────────────────────────────────────────────────────────

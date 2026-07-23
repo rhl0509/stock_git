@@ -106,7 +106,7 @@ app.add_middleware(
 )
 
 # CORS: Capacitor 앱 WebView 오리진 허용(웹은 동일 오리진이라 무관).
-#   iOS = capacitor://localhost, 안드 = http://localhost, vite dev = http://localhost:5173.
+#   iOS = capacitor://localhost, 안드 = http://localhost, vite dev = http://localhost:3030.
 #   add_middleware 는 마지막 등록이 가장 바깥(outermost)이라 preflight 를 먼저 처리한다.
 app.add_middleware(
     CORSMiddleware,
@@ -114,7 +114,7 @@ app.add_middleware(
         "capacitor://localhost",
         "http://localhost",
         "https://localhost",
-        "http://localhost:5173",
+        "http://localhost:3030",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -435,5 +435,5 @@ if os.path.isfile(_SPA_INDEX):
 
 if __name__ == '__main__':
     import uvicorn
-    port = int(os.getenv('PORT', '5099'))
+    port = int(os.getenv('PORT', '8030'))
     uvicorn.run("app:app", host="127.0.0.1", port=port, reload=False)

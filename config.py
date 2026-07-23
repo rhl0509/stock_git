@@ -54,7 +54,7 @@ class Config:
     DEBUG = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
 
     # 비밀번호 재설정 링크가 가리킬 서비스 베이스 URL (운영 시 공인 도메인으로 변경).
-    # 기본값은 이 앱의 포트 5099. 예전엔 5000 이었는데, DB 분리 후 5000 은 가계부
+    # 기본값은 이 앱의 포트 8030. 예전엔 5000 이었는데, DB 분리 후 5000 은 가계부
     # 포트가 되어 재설정 링크가 엉뚱한 앱을 가리켰다(env 미설정 시).
     # SMTP 발송 자격증명은 notify/email_send.py(EMAIL_* / app_settings)를 재사용한다.
-    APP_BASE_URL  = os.getenv('APP_BASE_URL', 'http://localhost:5099').rstrip('/')
+    APP_BASE_URL  = os.getenv('APP_BASE_URL', 'http://localhost:8030').rstrip('/')

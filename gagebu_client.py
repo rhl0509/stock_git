@@ -1,4 +1,4 @@
-"""가계부(d:\\expense_tracker, 기본 5000) 자동기록 클라이언트.
+"""가계부(d:\\expense_tracker, 기본 8010) 자동기록 클라이언트.
 
 ■ 신뢰 모델: 토큰을 **가계부가 발급한다**
   이 앱이 JWT 를 서명해 보내는 안을 검토했으나 기각했다 — 그러면 이 앱이 가계부
@@ -17,7 +17,7 @@
   아웃박스 행을 다시 집는다), 실패는 로그 + 결과 객체 반환(예외를 밖으로 안 던진다).
 
 ■ 설정
-  GAGEBU_BASE_URL   기본 http://127.0.0.1:5000
+  GAGEBU_BASE_URL   기본 http://127.0.0.1:8010
       ⚠ 127.0.0.1 고정이 기본인 이유: 가계부는 Tailscale 로도 도달 가능하고
         (expense_tracker/frontend/next.config.ts 의 allowedDevOrigins) 세션 쿠키가
         https_only=False 다. 평문 토큰을 로컬 루프백 밖으로 내보내지 않는다.
@@ -34,7 +34,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = os.getenv('GAGEBU_BASE_URL', 'http://127.0.0.1:5000').rstrip('/')
+BASE_URL = os.getenv('GAGEBU_BASE_URL', 'http://127.0.0.1:8010').rstrip('/')
 _TIMEOUT = 10          # kis_client 5~7초, notify/telegram 10초 — 그 관례 범위
 _INGEST_PATH = '/integration/stock/transactions'
 

@@ -5,7 +5,7 @@ import IndexBar from '../components/IndexBar.jsx';
 import AdvisorPanel from '../components/AdvisorPanel.jsx';
 import api from '../api/index.js';
 
-const HOUSEHOLD_URL = import.meta.env.VITE_HOUSEHOLD_URL || 'http://localhost:5000';
+const HOUSEHOLD_URL = import.meta.env.VITE_HOUSEHOLD_URL || 'http://localhost:3010';
 
 const BOTTOM_TABS = [
   { to: '/stock_live',        icon: 'bi-graph-up-arrow', label: '시세' },
