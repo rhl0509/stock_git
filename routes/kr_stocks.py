@@ -3,6 +3,9 @@ from fastapi.responses import JSONResponse
 from database.db_connection import get_db_connection
 from routes.utils import api_require_login, require_login_smart
 import requests, re
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(require_login_smart)])
 
@@ -31,7 +34,7 @@ def sync_kr_stocks():
                     stocks.append((code, name.strip(), market, code + suffix))
 
         if not stocks:
-            print("[KR_STOCKS] 수집 실패")
+            logger.error("[KR_STOCKS] 수집 실패")
             return 0
 
         seen = set()
@@ -51,13 +54,13 @@ def sync_kr_stocks():
                 )
             conn.commit()
             from datetime import datetime
-            print(f"[KR_STOCKS] 동기화 완료: {len(unique)}개 ({datetime.now().strftime('%Y-%m-%d %H:%M')})")
+            logger.info(f"[KR_STOCKS] 동기화 완료: {len(unique)}개 ({datetime.now().strftime('%Y-%m-%d %H:%M')})")
             return len(unique)
         finally:
             conn.close()
 
     except Exception as e:
-        print(f"[KR_STOCKS] 동기화 실패: {e}")
+        logger.error(f"[KR_STOCKS] 동기화 실패: {e}")
         return 0
 
 

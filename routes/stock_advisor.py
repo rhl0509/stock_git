@@ -10,6 +10,9 @@ from routes.advisor_data import _collect_analysis_data
 from config import Config
 import os
 import anthropic
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -169,7 +172,7 @@ def _build_prompt(name, code, kw, yf, dart, kis, bok, consensus=None, ml=None, u
         if tp and kw_price_now:
             diff_pct = abs(tp - kw_price_now) / kw_price_now * 100
             if diff_pct < 3.0:
-                print(f"[Consensus] 목표주가({tp:,})가 현재가({kw_price_now:,})와 너무 가까움 → 오탐으로 제거")
+                logger.info(f"[Consensus] 목표주가({tp:,})가 현재가({kw_price_now:,})와 너무 가까움 → 오탐으로 제거")
                 tp = None
                 consensus["target_price"] = None
 
@@ -193,7 +196,7 @@ def _build_prompt(name, code, kw, yf, dart, kis, bok, consensus=None, ml=None, u
             + (f"\n의견분포:     {op_str}" if op_str else "")
             + (f"\n참여애널리스트: {total_cnt}명" if total_cnt else "")
         )
-        print(f"[Consensus] 프롬프트 반영: 목표주가={tp}, 대표의견={dominant}, 매수비율={buy_ratio}%")
+        logger.info(f"[Consensus] 프롬프트 반영: 목표주가={tp}, 대표의견={dominant}, 매수비율={buy_ratio}%")
 
     short_sec = ""
     if short:

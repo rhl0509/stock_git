@@ -103,9 +103,9 @@ def _load_cache_file():
         try:
             with open(_CACHE_FILE, 'r', encoding='utf-8') as f:
                 _MODEL_CACHE = json.load(f)
-            print(f"[ML] 캐시 로드: {len(_MODEL_CACHE)}개 종목")
+            logger.info(f"[ML] 캐시 로드: {len(_MODEL_CACHE)}개 종목")
         except Exception as e:
-            print(f"[ML] 캐시 로드 실패: {e}")
+            logger.error(f"[ML] 캐시 로드 실패: {e}")
             _MODEL_CACHE = {}
 
 
@@ -116,7 +116,7 @@ def _save_cache_file():
             with open(_CACHE_FILE, 'w', encoding='utf-8') as f:
                 json.dump(_MODEL_CACHE, f, ensure_ascii=False)
     except Exception as e:
-        print(f"[ML] 캐시 저장 실패: {e}")
+        logger.error(f"[ML] 캐시 저장 실패: {e}")
 
 
 _load_cache_file()
@@ -135,7 +135,7 @@ def _get_ohlcv(code: str, ticker_yfin: str = "", count: int = 500):
                     df["volume"].values.astype(float),
                 )
     except Exception as e:
-        print(f"[ML] kiwoom OHLCV 실패 ({code}): {e}")
+        logger.error(f"[ML] kiwoom OHLCV 실패 ({code}): {e}")
 
     try:
         import yfinance as yf
@@ -152,7 +152,7 @@ def _get_ohlcv(code: str, ticker_yfin: str = "", count: int = 500):
                 df["Volume"].values.astype(float),
             )
     except Exception as e:
-        print(f"[ML] yfinance 폴백 실패 ({code}): {e}")
+        logger.error(f"[ML] yfinance 폴백 실패 ({code}): {e}")
 
     return None, None, None, None
 
@@ -300,7 +300,7 @@ class LogisticRegressionNumpy:
 
 
 def _train_model(code: str, ticker_yfin: str = ""):
-    print(f"[ML] {code} 학습 시작...")
+    logger.info(f"[ML] {code} 학습 시작...")
 
     close, high, low, volume = _get_ohlcv(code, ticker_yfin, count=500)
 
@@ -365,7 +365,7 @@ def _train_model(code: str, ticker_yfin: str = ""):
     top_features = [(feat_names[i], round(float(importances[i]), 4))
                     for i in top5_idx]
 
-    print(
+    logger.info(
         f"[ML] {code} 완료 | "
         f"정확도: {cv_acc:.3f}±{cv_std:.3f} | "
         f"기준선: {baseline:.3f} | "
@@ -562,7 +562,7 @@ def get_ml_prediction(code: str, ticker_yfin: str = "",
 
     cached = _MODEL_CACHE.get(code)
     if cached and cached.get('trained_date') == today:
-        print(f"[ML] {code} 캐시 히트")
+        logger.info(f"[ML] {code} 캐시 히트")
         return {**cached['result'], 'from_cache': True}
 
     # ETF·ETN·ELW 는 예측 대상이 아니다 — "실력 미달로 관망" 이 아니라 애초에 대상이

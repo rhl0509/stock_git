@@ -2,6 +2,9 @@ from fastapi import APIRouter, Request, Depends, Body
 from fastapi.responses import JSONResponse
 from routes.utils import api_require_login
 import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -243,7 +246,7 @@ def _analyze_stock(ticker_symbol, code, name, raw_data):
             'tags':           tags,
         }
     except Exception as e:
-        print(f"[Filter] {code} 분석 오류: {e}")
+        logger.error(f"[Filter] {code} 분석 오류: {e}")
         return None
 
 
@@ -258,13 +261,13 @@ def _run_screen():
     try:
         raw = yf.download(tickers, period='6mo', auto_adjust=True, progress=False, threads=True)
     except Exception as e:
-        print(f"[Filter] yfinance 다운로드 오류: {e}")
+        logger.error(f"[Filter] yfinance 다운로드 오류: {e}")
         return []
 
     if raw is None or raw.empty:
         return []
 
-    print(f"[Filter] 다운로드 완료. 컬럼 구조: {list(raw.columns[:4])}...")
+    logger.info(f"[Filter] 다운로드 완료. 컬럼 구조: {list(raw.columns[:4])}...")
 
     results = []
     for stock in UNIVERSE:
@@ -273,7 +276,7 @@ def _run_screen():
         if data:
             results.append(data)
 
-    print(f"[Filter] 스크리닝 완료: {len(results)}/{len(UNIVERSE)}개 성공")
+    logger.info(f"[Filter] 스크리닝 완료: {len(results)}/{len(UNIVERSE)}개 성공")
     _cache['result'] = results
     _cache['ts']     = now
     return results

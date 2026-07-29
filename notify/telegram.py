@@ -27,6 +27,9 @@ import requests
 
 # DB(app_settings) 토큰 저장/조회·이력 기록은 send.py 의 검증된 헬퍼 재사용
 from notify.send import _load_token, _save_token, _save_notify_history
+import logging
+
+logger = logging.getLogger(__name__)
 
 API_BASE = "https://api.telegram.org/bot{token}/{method}"
 
@@ -36,11 +39,11 @@ def _api(method: str, token: str, **data) -> Optional[dict]:
         resp = requests.post(API_BASE.format(token=token, method=method), data=data, timeout=10)
         js = resp.json()
         if not js.get("ok"):
-            print(f"[Telegram] {method} 실패: {resp.status_code} {str(js)[:200]}")
+            logger.error(f"[Telegram] {method} 실패: {resp.status_code} {str(js)[:200]}")
             return None
         return js
     except Exception as e:
-        print(f"[Telegram] {method} 호출 오류: {e}")
+        logger.error(f"[Telegram] {method} 호출 오류: {e}")
         return None
 
 
@@ -49,7 +52,7 @@ def send_telegram(text: str, link_url: Optional[str] = None) -> bool:
     token   = _load_token("TELEGRAM_BOT_TOKEN")
     chat_id = _load_token("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
-        print("❌ TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID 누락. `python -m notify.telegram --setup` 먼저 실행.")
+        logger.error("❌ TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID 누락. `python -m notify.telegram --setup` 먼저 실행.")
         _save_notify_history("telegram", text, False, "missing token/chat_id")
         return False
 
@@ -61,7 +64,7 @@ def send_telegram(text: str, link_url: Optional[str] = None) -> bool:
     ok = js is not None
     _save_notify_history("telegram", text, ok, None if ok else "send failed")
     if ok:
-        print("✅ 텔레그램 발송 성공")
+        logger.info("✅ 텔레그램 발송 성공")
     return ok
 
 

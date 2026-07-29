@@ -5,6 +5,9 @@ stock_advisor.py에서 분리된 외부 API 수집 함수들.
 import os, json, urllib.request, urllib.error, urllib.parse
 import threading, time
 from database.db_connection import get_db_connection
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # ══════════════════════════════════════════════════════════
@@ -60,7 +63,7 @@ def _dart_get_corp_code(stock_code):
             _DART_CORP_CACHE[stock_code] = corp_code
         return corp_code
     except Exception as e:
-        print(f"[DART] corp_code 조회 실패: {e}")
+        logger.error(f"[DART] corp_code 조회 실패: {e}")
         return None
 
 def _fetch_dart(code):
@@ -134,7 +137,7 @@ def _fetch_dart(code):
                         if prev_net is not None and net is not None and prev_net != 0:
                             financials['net_income_yoy'] = round((net - prev_net) / abs(prev_net) * 100, 1)
                         result['financials'] = financials
-                        print(f"[DART] 재무제표 수집: {year} {label}")
+                        logger.info(f"[DART] 재무제표 수집: {year} {label}")
                         break
             except Exception:
                 continue
@@ -159,12 +162,12 @@ def _fetch_dart(code):
                         'title': item.get('report_nm', ''),
                     })
                 result['disclosures'] = disclosures
-                print(f"[DART] 공시 {len(disclosures)}건 수집")
+                logger.info(f"[DART] 공시 {len(disclosures)}건 수집")
         except Exception as e:
-            print(f"[DART] 공시 조회 실패: {e}")
+            logger.error(f"[DART] 공시 조회 실패: {e}")
 
     except Exception as e:
-        print(f"[DART] 오류: {e}")
+        logger.error(f"[DART] 오류: {e}")
 
     return result
 
@@ -205,10 +208,10 @@ def _kis_get_token():
         _KIS_TOKEN     = data.get('access_token')
         expires_in     = int(data.get('expires_in', 86400))
         _KIS_TOKEN_EXP = now + expires_in
-        print(f"[KIS] 토큰 발급 완료 (만료: {expires_in//3600}시간 후)")
+        logger.info(f"[KIS] 토큰 발급 완료 (만료: {expires_in//3600}시간 후)")
         return _KIS_TOKEN
     except Exception as e:
-        print(f"[KIS] 토큰 발급 실패: {e}")
+        logger.error(f"[KIS] 토큰 발급 실패: {e}")
         return None
 
 def _kis_get(path, params, tr_id):
@@ -268,10 +271,10 @@ def _fetch_kis(code):
                 'frgn_trend':   '매수우위' if frgn_net > 0 else '매도우위',
                 'days':         len(rows),
             }
-            print(f"[KIS] 수급: 기관 {inst_net:+,} 외인 {frgn_net:+,} 프로그램 {prgm_net:+,}")
+            logger.info(f"[KIS] 수급: 기관 {inst_net:+,} 외인 {frgn_net:+,} 프로그램 {prgm_net:+,}")
 
     except Exception as e:
-        print(f"[KIS] 수급 조회 실패: {e}")
+        logger.error(f"[KIS] 수급 조회 실패: {e}")
 
     return result
 
@@ -310,14 +313,14 @@ def _fetch_bok():
                     'change': round(val - prev_v, 4),
                 }
         except Exception as e:
-            print(f"[BOK] {label} 조회 실패: {e}")
+            logger.error(f"[BOK] {label} 조회 실패: {e}")
 
     bok_get('722Y001', '0101000', 'base_rate')    # 기준금리
     bok_get('036Y001', '09602',   'usd_krw')      # 원달러 환율
     bok_get('817Y002', '010190000', 'bond_10y')   # 국채 10년
 
     if result:
-        print(f"[BOK] 수집: {list(result.keys())}")
+        logger.info(f"[BOK] 수집: {list(result.keys())}")
     return result
 
 
@@ -456,7 +459,7 @@ def _fetch_yfinance(ticker):
             'yf_div': yf_div,
         }
     except Exception as e:
-        print(f"[Advisor] yfinance 오류: {e}")
+        logger.error(f"[Advisor] yfinance 오류: {e}")
         return {}
 
 
@@ -498,7 +501,7 @@ def _fetch_naver_consensus(code):
         if tp_match:
             val = int(tp_match.group(1).replace(',', ''))
             result['target_price'] = val
-            print(f"[Consensus] wisereport 목표주가: {val:,}원")
+            logger.info(f"[Consensus] wisereport 목표주가: {val:,}원")
 
         for op in ['강력매수', '매수', '중립', '매도']:
             if op in raw[:30000]:
@@ -506,7 +509,7 @@ def _fetch_naver_consensus(code):
                 break
 
     except Exception as e:
-        print(f"[Consensus] wisereport 실패: {e}")
+        logger.error(f"[Consensus] wisereport 실패: {e}")
 
     # ── 2차: 네이버 금융 리서치 (종목코드 명시 검증) ──
     if not result.get('target_price'):
@@ -518,7 +521,7 @@ def _fetch_naver_consensus(code):
             raw = _http_get_text(url, headers={**headers, 'Referer': 'https://finance.naver.com/'})
 
             if code not in raw and len(raw) < 5000:
-                print(f"[Consensus] 리서치 페이지 없음: {code}")
+                logger.warning(f"[Consensus] 리서치 페이지 없음: {code}")
                 return result
 
             rows = re.findall(r'<tr[^>]*class="[^"]*"[^>]*>(.*?)</tr>', raw, re.DOTALL)
@@ -548,7 +551,7 @@ def _fetch_naver_consensus(code):
                 median_tp = trimmed[len(trimmed)//2]
                 result['target_price']  = median_tp
                 result['target_sample'] = len(target_list)
-                print(f"[Consensus] 리서치 {len(target_list)}개 → 중간값 목표주가 {median_tp:,}원")
+                logger.info(f"[Consensus] 리서치 {len(target_list)}개 → 중간값 목표주가 {median_tp:,}원")
 
             if opinion_list:
                 from collections import Counter
@@ -558,13 +561,13 @@ def _fetch_naver_consensus(code):
                 result['dominant_opinion'] = cnt.most_common(1)[0][0]
                 buy = cnt.get('강력매수', 0) + cnt.get('매수', 0)
                 result['buy_ratio'] = round(buy / result['total_count'] * 100, 1)
-                print(f"[Consensus] 의견 {result['total_count']}건: {result['dominant_opinion']}")
+                logger.info(f"[Consensus] 의견 {result['total_count']}건: {result['dominant_opinion']}")
 
         except Exception as e:
-            print(f"[Consensus] 리서치 파싱 실패: {e}")
+            logger.error(f"[Consensus] 리서치 파싱 실패: {e}")
 
     if not result:
-        print(f"[Consensus] {code} 커버리지 없음")
+        logger.warning(f"[Consensus] {code} 커버리지 없음")
     return result
 
 
@@ -604,11 +607,11 @@ def _fetch_naver_news(code, limit=5):
             ]
             if cleaned:
                 titles = cleaned[:limit]
-                print(f"[Naver] PC 뉴스 {len(titles)}건")
+                logger.info(f"[Naver] PC 뉴스 {len(titles)}건")
                 return titles
 
     except Exception as e:
-        print(f"[Naver] PC 뉴스 실패: {e}")
+        logger.error(f"[Naver] PC 뉴스 실패: {e}")
 
     # ── 2차: 네이버 금융 종목 뉴스 API ──
     try:
@@ -627,13 +630,13 @@ def _fetch_naver_news(code, limit=5):
 
         if titles:
             titles = titles[:limit]
-            print(f"[Naver] 뉴스 API {len(titles)}건")
+            logger.info(f"[Naver] 뉴스 API {len(titles)}건")
             return titles
 
     except Exception as e:
-        print(f"[Naver] 뉴스 API 실패: {e}")
+        logger.error(f"[Naver] 뉴스 API 실패: {e}")
 
-    print(f"[Naver] {code} 뉴스 수집 실패")
+    logger.error(f"[Naver] {code} 뉴스 수집 실패")
     return []
 
 
@@ -643,7 +646,7 @@ def _fetch_kiwoom(code):
         if not kiwoom.market_data_ready(): return {}
         return kiwoom.get_best_price(code) or {}
     except Exception as e:
-        print(f"[Advisor] 키움 오류: {e}")
+        logger.error(f"[Advisor] 키움 오류: {e}")
         return {}
 
 
@@ -653,10 +656,10 @@ def _fetch_short_selling(code: str) -> dict:
         from XGBoost_v2.short_features import get_short_features
         result = get_short_features(code)
         if result and any(v > 0 for v in result.values()):
-            print(f"[Short] {code}: {result}")
+            logger.info(f"[Short] {code}: {result}")
         return result
     except Exception as e:
-        print(f"[Short] 공매도 조회 실패: {e}")
+        logger.error(f"[Short] 공매도 조회 실패: {e}")
         return {}
 
 
@@ -675,7 +678,7 @@ def _collect_analysis_data(code: str) -> dict:
         try:
             results[key] = fn(*args)
         except Exception as e:
-            print(f"[Advisor] {key} 오류: {e}")
+            logger.error(f"[Advisor] {key} 오류: {e}")
 
     ticker = _get_ticker(code)
 
@@ -684,7 +687,7 @@ def _collect_analysis_data(code: str) -> dict:
             from routes.stock_ml import get_ml_prediction
             results['ml'] = get_ml_prediction(code, ticker)
         except Exception as e:
-            print(f'[ML] 오류: {e}')
+            logger.error(f'[ML] 오류: {e}')
 
     threads = [
         threading.Thread(target=run,    args=('kw',        _fetch_kiwoom,          code)),

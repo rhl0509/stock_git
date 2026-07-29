@@ -6,6 +6,9 @@ agent 모듈 전체 테이블 생성. 앱 기동 시 또는 수동으로 실행.
   python -m agent.db_migrate
 """
 from database.db_connection import get_db_connection
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def run():
@@ -71,7 +74,7 @@ def run():
             """)
 
         conn.commit()
-        print("[migrate] 테이블 준비 완료 (market_reports, recommend_track, event_calendar, dart_summaries)")
+        logger.info("[migrate] 테이블 준비 완료 (market_reports, recommend_track, event_calendar, dart_summaries)")
     finally:
         conn.close()
 

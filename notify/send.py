@@ -25,6 +25,9 @@ from typing import Optional
 
 import requests
 from dotenv import load_dotenv
+import logging
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -91,9 +94,9 @@ def _save_token(key: str, value: str) -> None:
             conn.commit()
         finally:
             conn.close()
-        print(f"[Token] DB 저장: {key}")
+        logger.info(f"[Token] DB 저장: {key}")
     except Exception as e:
-        print(f"[Token] DB 저장 실패, .env 폴백: {e}")
+        logger.error(f"[Token] DB 저장 실패, .env 폴백: {e}")
         _save_to_env(key, value)
 
 
@@ -137,7 +140,7 @@ def _refresh_access_token() -> Optional[str]:
     refresh_token  = _load_token("KAKAO_REFRESH_TOKEN")
     client_secret  = os.getenv("KAKAO_CLIENT_SECRET")  # 앱 보안 설정 활성 시 필요
     if not rest_api_key or not refresh_token:
-        print("❌ KAKAO_REST_API_KEY 또는 KAKAO_REFRESH_TOKEN 누락. notify.kakao_auth 먼저 실행하세요.")
+        logger.error("❌ KAKAO_REST_API_KEY 또는 KAKAO_REFRESH_TOKEN 누락. notify.kakao_auth 먼저 실행하세요.")
         return None
 
     payload: dict = {
@@ -154,7 +157,7 @@ def _refresh_access_token() -> Optional[str]:
         timeout=10,
     )
     if resp.status_code != 200:
-        print(f"❌ 토큰 갱신 실패: {resp.status_code} {resp.text}")
+        logger.error(f"❌ 토큰 갱신 실패: {resp.status_code} {resp.text}")
         return None
 
     data = resp.json()
@@ -164,7 +167,7 @@ def _refresh_access_token() -> Optional[str]:
         new_refresh = data.get("refresh_token")  # 만료 임박 시 함께 갱신
         if new_refresh:
             _save_token("KAKAO_REFRESH_TOKEN", new_refresh)
-        print("🔄 access_token 갱신 완료")
+        logger.info("🔄 access_token 갱신 완료")
         return new_access
     return None
 
@@ -236,7 +239,7 @@ def _send_kakao(text: str, link_url: str) -> bool:
 
     # 401 = 토큰 만료. 자동 갱신 후 재시도.
     if resp.status_code == 401:
-        print("⚠ access_token 만료, 갱신 시도...")
+        logger.warning("⚠ access_token 만료, 갱신 시도...")
         new_token = _refresh_access_token()
         if not new_token:
             return False
@@ -247,9 +250,9 @@ def _send_kakao(text: str, link_url: str) -> bool:
     _save_notify_history("kakao", text, ok, err_msg)
 
     if ok:
-        print("✅ 카카오톡 발송 성공")
+        logger.info("✅ 카카오톡 발송 성공")
         return True
-    print(f"❌ 카카오톡 발송 실패: {resp.status_code} {resp.text}")
+    logger.error(f"❌ 카카오톡 발송 실패: {resp.status_code} {resp.text}")
     return False
 
 
@@ -303,13 +306,13 @@ def migrate_tokens_to_db() -> None:
                             (key, env_val),
                         )
                     conn.commit()
-                    print(f"[Token] 마이그레이션 완료: {key}")
+                    logger.info(f"[Token] 마이그레이션 완료: {key}")
                 else:
-                    print(f"[Token] 이미 DB에 존재: {key}")
+                    logger.info(f"[Token] 이미 DB에 존재: {key}")
             finally:
                 conn.close()
         except Exception as e:
-            print(f"[Token] 마이그레이션 실패 ({key}): {e}")
+            logger.error(f"[Token] 마이그레이션 실패 ({key}): {e}")
 
 
 def sync_tokens_from_env() -> None:
@@ -322,7 +325,7 @@ def sync_tokens_from_env() -> None:
         if not env_val:
             continue
         _save_token(key, env_val)
-        print(f"[Token] DB 동기화: {key}")
+        logger.info(f"[Token] DB 동기화: {key}")
 
 
 # ─────────────────────────────────────────────────────────
