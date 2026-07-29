@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 > nul
 setlocal enabledelayedexpansion
-title Stock Git (copy) - Web only :8030
+title Stock Git - Web :8030
 
 cd /d "%~dp0"
 
@@ -9,19 +9,20 @@ set PYTHONUTF8=1
 set PYTHONIOENCODING=utf-8
 
 REM ====================================================================
-REM  복사본 웹 전용 런처 (포트 8030)
-REM  [중요] 5001(원본)은 절대 건드리지 않는다. kill 코드 없음.
-REM         스케줄러 OFF / 수집기·워치독·모니터 미기동 → 원본과 자원 충돌 방지.
-REM         (같은 .env / MySQL / 키움 단일 로그인 / 5100 수집기를 공유하므로,
-REM          복사본은 웹 UI만 8030에서 따로 띄우고 원본 자원을 그대로 재사용한다.)
+REM  stock_git 런처 (포트 8030, 독립 운영)
+REM  [중요] 8020(원본 D:\stock_tracker)은 절대 건드리지 않는다. kill 코드 없음.
 REM
-REM  [2026-07-17] DB를 expense_tracker → stock_stack 으로 이관했으나 원본·복사본이
-REM  여전히 같은 DB를 본다. 따라서 스케줄러 OFF 규칙은 그대로 유지해야 한다.
-REM  주의: .env 에는 RUN_SCHEDULER=true 가 들어 있어, 이 bat 을 거치지 않고
-REM  `python app.py` 로 직접 띄우면 원본과 이중 발사된다(알림·백업 중복).
-REM  복사본에서 산출물을 내려면 스케줄러 대신 파이프라인을 온디맨드로 실행할 것:
-REM    python -m XGBoost_v2.collect_v2 --top 200
-REM    python -m XGBoost_v2.daily_recommend
+REM  [2026-07-29] DB 를 stock_stack 에서 stock_git 으로 분리했다. 원본과 테이블을
+REM  공유하지 않으므로 스케줄러를 켜도 DB 쪽 이중 기록은 없다. 이 bat 의
+REM  RUN_SCHEDULER=false 강제도 함께 걷어냈다 — 이제 .env 값(true)이 그대로 먹고,
+REM  `python app.py` 로 직접 띄워도 이 bat 과 동작이 같다.
+REM
+REM  [남은 주의] DB 는 갈라졌지만 알림 수신자(텔레그램/카카오)는 그대로 하나다.
+REM  원본 8020 의 스케줄러가 켜져 있으면 아침뉴스·공시·가격 알림이 두 번 온다.
+REM  둘 다 상시 운용하려면 한쪽 스케줄러를 끄거나 수신 채널을 분리할 것.
+REM
+REM  수집기: stock_git 은 KIS REST 전용이라 32bit 키움 콜렉터에 의존하지 않는다
+REM  (kiwoom_client.py 참고). 계좌·조건검색 등 OCX 전용 기능은 미제공.
 REM ====================================================================
 
 REM 64bit venv (FastAPI)
@@ -32,14 +33,13 @@ if not exist "%VENV64%" (
     exit /b 1
 )
 
-REM 원본과 중복 실행 방지: 스케줄러는 끈다 (알림/작업 중복 발사 방지)
-set RUN_SCHEDULER=false
+REM 스케줄러는 .env 의 RUN_SCHEDULER 가 결정한다(여기서 덮지 않는다).
 
 echo ===================================================
-echo  Stock Git (copy) - Web only
-echo  Port    : 8030  (원본 5001 은 건드리지 않음)
-echo  Scheduler: OFF
-echo  Collector: 원본 5100 재사용 (별도 기동 안 함)
+echo  Stock Git - Web :8030 (독립 운영)
+echo  DB      : stock_git  (원본 8020 의 stock_stack 과 분리)
+echo  Port    : 8030  (원본 8020 은 건드리지 않음)
+echo  Scheduler: .env RUN_SCHEDULER 따름
 echo ===================================================
 echo.
 echo Killing any existing process on port 8030...

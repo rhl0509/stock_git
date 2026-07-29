@@ -1,5 +1,5 @@
 -- migration_gagebu_outbox.sql
--- 가계부(gagebu) 자동기록용 아웃박스. stock_stack DB 대상. 재실행 안전(IF NOT EXISTS).
+-- 가계부(gagebu) 자동기록용 아웃박스. stock_git DB 대상. 재실행 안전(IF NOT EXISTS).
 --
 -- ── 왜 아웃박스인가 ─────────────────────────────────────────────────
 -- 기존에는 매수/매도가 자기 DB의 transactions 테이블에 가계부 거래를 직접 INSERT 했고

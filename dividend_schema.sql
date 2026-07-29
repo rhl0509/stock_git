@@ -1,8 +1,9 @@
 -- ============================================================================
 -- dividend_schema.sql — 배당·현금흐름 캘린더 스키마
--- 대상 DB: stock_stack (주식 프로그램 전용, MySQL 8.0+)
+-- 대상 DB: stock_git (주식 프로그램 전용, MySQL 8.0+)
 --          2026-07-17 이전에는 가계부와 expense_tracker DB를 공유했으나,
---          가계부가 gagebu DB로 분리되면서 주식 테이블만 stock_stack 으로 이관했다.
+--          가계부가 gagebu DB로 분리되면서 주식 테이블만 stock_stack 으로 이관했고,
+--          2026-07-29 stock_tracker(8020)와 갈라서며 stock_git 으로 다시 분리했다.
 --
 -- 설계문서(배당캘린더_설계문서.md) 4장 기준.
 -- 단, 보유종목은 신규 holdings 테이블을 만들지 않고 기존 stock_holdings 를
@@ -11,7 +12,7 @@
 --   2) v_dividend_calendar  — stock_holdings 와 조인한 캘린더 조회용 뷰
 --
 -- 멱등(idempotent): 재실행해도 안전하다.
--- 실행:  mysql -u <user> -p stock_stack < dividend_schema.sql
+-- 실행:  mysql -u <user> -p stock_git < dividend_schema.sql
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------

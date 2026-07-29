@@ -10,7 +10,7 @@
 |---|---|
 | Python | 3.10+ (코드에서 `X | None` 유니온 문법 사용) |
 | Node.js | 18+ (프론트 빌드용) |
-| MySQL | 8.x, DB명 `stock_stack` (UTF-8 `utf8mb4`) |
+| MySQL | 8.x, DB명 `stock_git` (UTF-8 `utf8mb4`) |
 | OS | Windows / Linux 무관 (현재 Windows에서 운영) |
 
 > 키움 API 연동(`/api/kiwoom/*`)은 32bit 콜렉터·네이티브 환경 전제라 Windows에서만 동작. 그 외 기능은 OS 무관.
@@ -105,7 +105,7 @@ uvicorn app:app --host 127.0.0.1 --port 8030
 - `RUN_SCHEDULER=true`면 기동 시 인프로세스 스케줄러(APScheduler, KST)가 하나의
   BackgroundScheduler 인스턴스에 아래 잡을 등록한다(코어 5 + auto_jobs 8 + agent 15).
 
-  **app.py 코어 (app.py:372~376)**
+  **app.py 코어 (app.py:383~387)**
   | 잡 | 시각(KST) |
   |---|---|
   | 아침 뉴스 크롤 | 08:40 |
@@ -129,9 +129,12 @@ uvicorn app:app --host 127.0.0.1 --port 8030
   **agent 15종**: 보고서(일/주/월)·성과추적·이상감지·공시요약·수급·갭리스크·
   사이드카(장중 매분)·실적·리밸런싱·워치독·드리프트·자동손절 (agent/scheduler.py:register).
 
-  > 이 복사본(8030)은 원본(5001)과 같은 DB(stock_stack)를 공유하므로, 스케줄러를 켠 채
-  > 둘 다 띄우면 알림·백업이 이중 발사된다. start_all.bat 은 `RUN_SCHEDULER=false` 로
-  > 이를 막는다 — 배치를 거치지 않고 `python app.py` 로 직접 띄우지 말 것.
+  > **알림 중복 주의.** 2026-07-29 DB 분리로 원본(`D:\stock_tracker`, 8020, DB `stock_stack`)과
+  > 테이블을 더는 공유하지 않아 DB 이중 기록은 없다. 다만 **알림 수신자(텔레그램/카카오)는
+  > 여전히 하나**라 원본 스케줄러가 켜져 있으면 아침뉴스·공시·가격 알림이 두 번 온다.
+  > 둘 다 상시 운용하려면 한쪽 스케줄러를 끄거나 수신 채널을 분리할 것.
+  > (start_all.bat 의 `RUN_SCHEDULER=false` 강제는 분리와 함께 제거됐다 — 이제 `.env` 값이
+  > 그대로 먹고 `python app.py` 와 start_all.bat 의 동작이 같다.)
 
 ---
 
@@ -153,7 +156,7 @@ curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8030/api/recommend-pass/
 | 위치 | 현재값 | 변경 |
 |---|---|---|
 | `app.py` SessionMiddleware | `https_only=False`, `same_site="lax"` | `https_only=True` |
-| `app.py:375` host | `127.0.0.1` | 같은 호스트 프록시면 유지, 직접 노출 시 `0.0.0.0` |
+| `app.py:439` host | `127.0.0.1` | 같은 호스트 프록시면 유지, 직접 노출 시 `0.0.0.0` |
 | `.env` `APP_BASE_URL` | `http://localhost:8030` | 공인 도메인(`https://...`) |
 
 > 같은 호스트에서 리버스 프록시가 8030로 프록시하는 구성이면 `127.0.0.1` 유지가 더 안전하다.

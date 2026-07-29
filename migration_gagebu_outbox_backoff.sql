@@ -1,5 +1,5 @@
 -- migration_gagebu_outbox_backoff.sql
--- gagebu_outbox 에 재시도 백오프 컬럼 추가. stock_stack DB. 재실행 안전.
+-- gagebu_outbox 에 재시도 백오프 컬럼 추가. stock_git DB. 재실행 안전.
 --
 -- ── 왜 ──
 -- 기존 재시도 정책은 attempts < 5 로 선별하고 실패마다 attempts+1 이라, 재시도 가능한

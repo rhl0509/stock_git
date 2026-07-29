@@ -1,7 +1,7 @@
 """가계부 아웃박스(gagebu_outbox) 회귀 테스트 — 적재·멱등·백오프·복구·소유자 게이트.
 
 외부 가계부 앱 없이 로직만 검증한다(전송 성공 경로는 send_transaction 을 스텁으로 대체).
-실DB(stock_stack)의 gagebu_outbox 테이블을 쓰며 테스트 행은 자동 정리한다.
+실DB(stock_git)의 gagebu_outbox 테이블을 쓰며 테스트 행은 자동 정리한다.
 
 실행: d:\\expense_tracker\\.venv64\\Scripts\\python.exe -m pytest tests/test_gagebu_outbox.py -q
 """
