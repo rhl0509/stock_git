@@ -134,6 +134,26 @@ def _save_to_env(key: str, value: str) -> None:
     os.environ[key] = value
 
 
+# 응답 본문에 되비칠 수 있는 자격증명 키 — 값만 가린다.
+# `code` 는 넣지 않는다: 두 호출부 모두 인가코드를 보내지 않고(갱신은 grant_type=
+# refresh_token, 발송은 template_object), 카카오 오류 응답의 `"code":-401` 만 걸려
+# 진단 정보가 사라진다. 인가코드 교환은 kakao_auth.py(대화형 CLI)에만 있다.
+_SECRET_IN_BODY = re.compile(
+    r'("?(?:access_token|refresh_token|client_secret|client_id)"?\s*[:=]\s*"?)([^"\s,&}]+)',
+    flags=re.IGNORECASE)
+
+
+def _safe_body(resp: requests.Response) -> str:
+    """실패 응답 본문을 로그·이력에 남길 수 있게 다듬는다.
+
+    45cc7d6 으로 로그가 회전 파일에 영속되면서 실패 응답도 디스크에 남게 됐다.
+    카카오 OAuth 오류 응답이 요청 파라미터를 되비추면 refresh_token·client_secret 이
+    평문으로 박히므로, 토큰류 값을 가리고 200자로 자른다(_save_notify_history 가
+    이미 쓰던 절단 폭과 같게 맞춘다).
+    """
+    return _SECRET_IN_BODY.sub(r"\1***", resp.text or "")[:200]
+
+
 def _refresh_access_token() -> Optional[str]:
     """refresh_token으로 access_token 재발급."""
     rest_api_key   = os.getenv("KAKAO_REST_API_KEY")
@@ -157,7 +177,7 @@ def _refresh_access_token() -> Optional[str]:
         timeout=10,
     )
     if resp.status_code != 200:
-        logger.error(f"❌ 토큰 갱신 실패: {resp.status_code} {resp.text}")
+        logger.error(f"❌ 토큰 갱신 실패: {resp.status_code} {_safe_body(resp)}")
         return None
 
     data = resp.json()
@@ -246,13 +266,13 @@ def _send_kakao(text: str, link_url: str) -> bool:
         resp = _post(new_token)
 
     ok = resp.status_code == 200
-    err_msg = None if ok else f"{resp.status_code} {resp.text[:200]}"
+    err_msg = None if ok else f"{resp.status_code} {_safe_body(resp)}"
     _save_notify_history("kakao", text, ok, err_msg)
 
     if ok:
         logger.info("✅ 카카오톡 발송 성공")
         return True
-    logger.error(f"❌ 카카오톡 발송 실패: {resp.status_code} {resp.text}")
+    logger.error(f"❌ 카카오톡 발송 실패: {resp.status_code} {_safe_body(resp)}")
     return False
 
 

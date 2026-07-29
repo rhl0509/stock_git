@@ -175,3 +175,41 @@ def test_price_alert_user_scoped(auth_client):
     alerts = auth_client.get("/api/price_alerts").json()["alerts"]
     assert all('user_no' in a for a in alerts)
     assert len({a['user_no'] for a in alerts}) == 1   # 전부 내 것
+
+
+# ─────────────────────────────────────────────────────────────────
+# 10. 실패 응답 본문이 로그·DB 에 평문 자격증명을 남기지 않는다
+#     (로그가 회전 파일로 영속되면서 콘솔 휘발 전제가 깨졌다)
+# ─────────────────────────────────────────────────────────────────
+class _FakeResp:
+    def __init__(self, text):
+        self.text = text
+
+
+def test_safe_body_masks_credentials():
+    from notify.send import _safe_body
+
+    body = ('{"error":"invalid_grant","refresh_token":"RT-abcdef123456",'
+            '"client_secret":"CS-secret999","access_token":"AT-zzz111"}')
+    out = _safe_body(_FakeResp(body))
+
+    for leaked in ("RT-abcdef123456", "CS-secret999", "AT-zzz111"):
+        assert leaked not in out, f"자격증명 유출: {leaked} in {out}"
+    assert "invalid_grant" in out          # 진단에 필요한 오류 코드는 남긴다
+    assert out.count("***") == 3
+
+    # form-urlencoded 되비침도 가린다
+    out2 = _safe_body(_FakeResp("grant_type=refresh_token&client_secret=CS-x9&client_id=CID-42"))
+    assert "CS-x9" not in out2 and "CID-42" not in out2
+
+    # 오류 코드는 자격증명이 아니므로 남아야 한다(과잉 마스킹 방지)
+    out3 = _safe_body(_FakeResp('{"msg":"token not exist","code":-401}'))
+    assert "-401" in out3
+
+
+def test_safe_body_truncates_and_tolerates_empty():
+    from notify.send import _safe_body
+
+    assert len(_safe_body(_FakeResp("A" * 5000))) == 200
+    assert _safe_body(_FakeResp("")) == ""
+    assert _safe_body(_FakeResp(None)) == ""
