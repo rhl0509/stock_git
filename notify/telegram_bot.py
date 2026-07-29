@@ -100,12 +100,24 @@ def _loop():
     except Exception:
         pass
 
+    # 직전 거부 사유. 같은 사유가 이어지는 동안은 로그를 반복하지 않는다
+    # (거부는 3초마다 재시도라 매번 남기면 하루 3만 줄로 app.log 회전을 밀어낸다).
+    fail_desc = None
+
     while True:
         try:
             js = _get_updates(token, offset, timeout=25)
             if not js or not js.get("ok"):
+                # 텔레그램이 사유를 description 에 실어 보낸다. 이걸 버리면
+                # 409(중복 폴링)·401(토큰 무효)·429(레이트리밋)가 전부
+                # "메시지가 안 옴" 과 구분되지 않는다.
+                desc = f"{(js or {}).get('error_code')} {(js or {}).get('description')}"
+                if desc != fail_desc:
+                    logger.warning(f"[telegram_bot] getUpdates 거부: {desc}")
+                    fail_desc = desc
                 time.sleep(3)
                 continue
+            fail_desc = None
             for upd in js.get("result", []):
                 offset = upd["update_id"] + 1
                 msg = upd.get("message") or upd.get("edited_message") or {}
