@@ -15,7 +15,7 @@
 | 스케줄러 | APScheduler (인프로세스, KST) |
 | 결제 | PortOne V2 (키 미설정 시 mock 모드) |
 | AI | Anthropic Claude (챗봇·종목 분석), XGBoost/LightGBM 앙상블(추천 모델) |
-| 시장 데이터 | 한국투자증권(KIS, 국내 시세·일봉·외국인), DART, KRX(pykrx), 네이버 금융, 한국은행(ECOS), FMP, Finnhub, yfinance 등 |
+| 시장 데이터 | 한국투자증권(KIS, 국내 시세·일봉·외국인), DART, KRX(pykrx), 네이버 금융, 한국은행(ECOS), FRED, yfinance 등 |
 
 ---
 
